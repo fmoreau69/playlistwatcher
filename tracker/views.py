@@ -80,6 +80,16 @@ def clean_date(value):
     return None
 
 
+def clean_int(value):
+    """Nettoie un entier venant d'Excel, retourne None si vide"""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    s = str(value).replace("\u202f", "").replace(" ", "").strip()
+    return int(s) if s.isdigit() else None
+
+
 def clean_preview(value):
     """Préparer les valeurs pour affichage dans la preview"""
     if pd.isna(value) or value == "":
@@ -102,9 +112,8 @@ def import_excel(request):
             ws = wb.active
 
             # Convertir en DataFrame pandas
-            df = pd.DataFrame(ws.values)
-            df.columns = df.iloc[0]
-            df = df.drop(0)
+            data = list(ws.values)
+            df = pd.DataFrame(data[1:], columns=data[0])
 
             # Colonnes obligatoires
             required_columns = [
@@ -118,10 +127,12 @@ def import_excel(request):
 
             # Construire la liste pour preview
             preview_data = []
-            for idx, row in df.iterrows():
+
+            for row_index, row in df.iterrows():
                 # Hyperliens
-                playlist_cell = ws.cell(row=idx+2, column=list(df.columns).index("Playlist")+1)
-                curateur_cell = ws.cell(row=idx+2, column=list(df.columns).index("Curateur")+1)
+                excel_row = row_index + 2  # 1 = header, +1 pour passer en base 1 Excel
+                playlist_cell = ws.cell(row=excel_row, column=list(df.columns).index("Playlist") + 1)
+                curateur_cell = ws.cell(row=excel_row, column=list(df.columns).index("Curateur") + 1)
                 playlist_url = playlist_cell.hyperlink.target if playlist_cell.hyperlink else ""
                 curateur_url = curateur_cell.hyperlink.target if curateur_cell.hyperlink else ""
 
@@ -132,7 +143,7 @@ def import_excel(request):
                     "Curateur": row.get("Curateur") or "",
                     "CurateurURL": curateur_url,
                     "Contact": row.get("Contact") or "",
-                    "Abonnés": row.get("Abonnés") or "",
+                    "Abonnés": (str(row.get("Abonnés")).replace("\u202f", "").replace(" ", "").strip() if row.get("Abonnés") not in [None, ""] else ""),
                     "Date d'ajout": clean_preview(row.get("Date d'ajout")),
                     "Etat": row.get("Etat") or "",
                     "Description": row.get("Description") or "",
@@ -142,7 +153,7 @@ def import_excel(request):
             # Stocker dans la session
             request.session["import_preview"] = preview_data
 
-            return render(request, "tracker/import_preview.html", {"rows": preview_data})
+            return render(request, "tracker/import_preview.html", {"preview_data": preview_data, "total": len(preview_data)})
 
     else:
         form = ExcelUploadForm()
@@ -170,7 +181,7 @@ def confirm_import(request):
             name=row.get("Playlist") or "Sans nom",
             defaults={
                 "spotify_id": f"temp_{(row.get('Playlist') or 'unk')}"[:64],
-                "followers": int(row.get("Abonnés").replace('\u202f', '').strip() or 0),
+                "followers": clean_int(row.get("Abonnés")),
                 "description": row.get("Description") or "",
                 "url": row.get("PlaylistURL") or "",
                 "owner_name": row.get("Curateur") or "",
