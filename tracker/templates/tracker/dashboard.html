@@ -1,0 +1,23 @@
+{% extends "tracker/base.html" %}{% block content %}
+<h2>Apparitions</h2>
+<table>
+<thead><tr>
+<th>Titre</th><th>Playlist</th><th>Curateur</th><th>Contact</th>
+<th>Abonnés</th><th>Date d'ajout</th><th>État</th><th>Description</th><th>Mise à jour</th>
+</tr></thead><tbody>
+{% for a in rows %}
+<tr>
+<td>{{ a.track.name }}</td>
+<td><a href="{{ a.playlist.url }}" target="_blank">{{ a.playlist.name }}</a></td>
+<td>{% if a.playlist.owner_url %}<a href="{{ a.playlist.owner_url }}" target="_blank">{{ a.playlist.owner_name }}</a>{% else %}{{ a.playlist.owner_name }}{% endif %}</td>
+<td>{{ a.contact }}</td>
+<td>{{ a.playlist.followers }}</td>
+<td>{{ a.added_on }}</td>
+<td>{{ a.state }}</td>
+<td>{{ a.playlist.description|truncatechars:80 }}</td>
+<td>{{ a.updated_on }}</td>
+</tr>
+{% endfor %}
+</tbody></table>
+<p><em>Astuce :</em> Lancement d’un scan via la commande <code>python manage.py scan_playlists</code>.</p>
+{% endblock %}

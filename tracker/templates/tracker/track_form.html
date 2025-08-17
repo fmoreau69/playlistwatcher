@@ -1,0 +1,5 @@
+{% extends "tracker/base.html" %}{% block content %}
+<h2>Ajouter un titre</h2>
+<form method="post">{% csrf_token %}{{ form.as_p }}<button type="submit">Enregistrer</button></form>
+<p>Astuce : l’ID Spotify est la chaîne après <code>open.spotify.com/track/</code>.</p>
+{% endblock %}
