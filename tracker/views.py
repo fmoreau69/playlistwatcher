@@ -1,10 +1,12 @@
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.http import HttpResponse
+from django.contrib import messages
 from .models import Appearance, Track
-from .forms import TrackForm
+from .forms import TrackForm, ExcelUploadForm
 import pandas as pd
 from django.utils.timezone import now
+
 
 def dashboard(request):
     qs = Appearance.objects.select_related("track","playlist").order_by("-updated_on")
@@ -42,3 +44,48 @@ def export_excel(request):
         resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         resp["Content-Disposition"] = f'attachment; filename="{path}"'
         return resp
+
+# Mapping colonnes Excel → champs du modèle Appearance
+COLUMN_MAPPING = {
+    'Titre': 'title',
+    'Playlist': 'playlist',
+    'Curateur': 'curator',
+    'Contact': 'contact',
+    'Abonnés': 'followers',
+    'Date d\'ajout': 'added_date',
+    'Etat': 'status',
+    'Description': 'description',
+    'Mise à jour': 'updated_date'
+}
+
+def import_excel(request):
+    if request.method == "POST":
+        form = ExcelUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            excel_file = request.FILES['file']
+            try:
+                df = pd.read_excel(excel_file)
+            except Exception as e:
+                messages.error(request, f"Erreur lors de la lecture du fichier : {e}")
+                return redirect('import_excel')
+
+            # Vérifier que toutes les colonnes du mapping sont présentes
+            missing_cols = [col for col in COLUMN_MAPPING if col not in df.columns]
+            if missing_cols:
+                messages.error(request, f"Colonnes manquantes dans le fichier Excel : {', '.join(missing_cols)}")
+                return redirect('import_excel')
+
+            added_count = 0
+            for _, row in df.iterrows():
+                # On utilise un champ unique pour éviter les doublons, par ex. title + playlist
+                if not Appearance.objects.filter(title=row['Titre'], playlist=row['Playlist']).exists():
+                    # Créer un dictionnaire de valeurs à partir du mapping
+                    data = {model_field: row[excel_col] for excel_col, model_field in COLUMN_MAPPING.items()}
+                    Appearance.objects.create(**data)
+                    added_count += 1
+
+            messages.success(request, f"Import terminé ! {added_count} entrée(s) ajoutée(s).")
+            return redirect('dashboard')
+    else:
+        form = ExcelUploadForm()
+    return render(request, "tracker/import_excel.html", {"form": form})
