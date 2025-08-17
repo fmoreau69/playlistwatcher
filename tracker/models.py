@@ -29,3 +29,11 @@ class Appearance(models.Model):
 
     class Meta:
         unique_together = ("track", "playlist")
+
+class TaskStatus(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    status = models.CharField(max_length=50, default="idle")  # idle, running, done
+    updated_on = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name}: {self.status}"

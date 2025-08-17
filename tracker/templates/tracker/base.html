@@ -1,9 +1,50 @@
-<!doctype html><html><head>
-<meta charset="utf-8"><title>Playlist Watcher</title>
-<link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
-</head><body>
-<header><h1>Playlist Watch</h1><nav>
-<a href="/">Dashboard</a> · <a href="/tracks/new/">Ajouter un titre</a> · <a href="{% url 'import_excel' %}">Importer un Excel</a> · <a href="/export/">Exporter Excel</a>
-</nav></header>
-<main>{% block content %}{% endblock %}</main>
-</body></html>
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <title>Playlist Watcher</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  </head>
+  <body>
+    <!-- Navbar Bootstrap -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+      <div class="container-fluid">
+        <!-- Logo / Titre -->
+        <a class="navbar-brand" href="/">Playlist Watcher</a>
+
+        <!-- Bouton menu mobile -->
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <!-- Liens -->
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="nav-link" href="/">Dashboard</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/tracks/new/">Ajouter un titre</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{% url 'import_excel' %}">Importer un Excel</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/export/">Exporter un Excel</a>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Contenu principal -->
+    <main class="container-fluid mt-4">
+      {% block content %}
+      {% endblock %}
+    </main>
+
+    <!-- Bootstrap JS (nécessaire pour le menu mobile) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

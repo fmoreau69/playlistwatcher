@@ -1,29 +1,51 @@
-{% extends "tracker/base.html" %}{% block content %}
-<h2>Apparitions</h2>
-<table>
-<thead><tr>
-<th>Titre</th><th>Playlist</th><th>Curateur</th><th>Contact</th>
-<th>Abonnés</th><th>Date d'ajout</th><th>État</th><th>Description</th><th>Mise à jour</th>
-</tr></thead><tbody>
-{% for a in rows %}
-<tr>
-<td>{{ a.track.name }}</td>
-<td>
-  {% if a.playlist.url %}
-    <a href="{{ a.playlist.url }}" target="_blank">{{ a.playlist.name }}</a>
-  {% else %}
-    {{ a.playlist.name }}
-  {% endif %}
-</td>
-<td>{% if a.playlist.owner_url %}<a href="{{ a.playlist.owner_url }}" target="_blank">{{ a.playlist.owner_name }}</a>{% else %}{{ a.playlist.owner_name }}{% endif %}</td>
-<td>{{ a.contact }}</td>
-<td>{{ a.playlist.followers }}</td>
-<td>{{ a.added_on }}</td>
-<td>{{ a.state }}</td>
-<td>{{ a.playlist.description|truncatechars:80 }}</td>
-<td>{{ a.updated_on }}</td>
-</tr>
-{% endfor %}
-</tbody></table>
-<p><em>Astuce :</em> Lancement d’un scan via la commande <code>python manage.py scan_playlists</code>.</p>
+{% extends "tracker/base.html" %}
+{% block content %}
+    <h2>Apparitions</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <a href="{% url 'scan_playlists' %}" class="btn btn-warning">
+        🔄 Scanner les playlists
+      </a>
+
+      {% if scan_status %}
+        {% if scan_status.status == "running" %}
+          <span class="badge bg-info">Scan en cours...</span>
+        {% elif scan_status.status == "done" %}
+          <span class="badge bg-success">Dernier scan terminé ✅</span>
+        {% elif scan_status.status == "error" %}
+          <span class="badge bg-danger">Erreur pendant le scan ❌</span>
+        {% endif %}
+      {% endif %}
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped table-bordered">
+            <thead>
+                <tr>
+                    <th>Titre</th><th>Playlist</th><th>Curateur</th><th>Contact</th>
+                    <th>Abonnés</th><th>Date d'ajout</th><th>État</th><th>Description</th><th>Mise à jour</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in rows %}
+                <tr>
+                <td>{{ a.track.name }}</td>
+                <td>
+                    {% if a.playlist.url %}
+                        <a href="{{ a.playlist.url }}" target="_blank">{{ a.playlist.name }}</a>
+                    {% else %}
+                        {{ a.playlist.name }}
+                    {% endif %}
+                </td>
+                <td>{% if a.playlist.owner_url %}<a href="{{ a.playlist.owner_url }}" target="_blank">{{ a.playlist.owner_name }}</a>{% else %}{{ a.playlist.owner_name }}{% endif %}</td>
+                <td>{{ a.contact }}</td>
+                <td>{{ a.playlist.followers|default_if_none:"" }}</td>
+                <td>{{ a.added_on }}</td>
+                <td>{{ a.state }}</td>
+                <td>{{ a.playlist.description|truncatechars:80 }}</td>
+                <td>{{ a.updated_on }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p><em>Astuce :</em> Lancement d’un scan via la commande <code>python manage.py scan_playlists</code>.</p>
 {% endblock %}

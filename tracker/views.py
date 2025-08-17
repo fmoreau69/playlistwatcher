@@ -1,17 +1,23 @@
+import pandas as pd
+import threading
+from django.core.management import call_command
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.http import HttpResponse
 from django.contrib import messages
-from .models import Appearance, Playlist, Track
-from .forms import TrackForm, ExcelUploadForm
-import pandas as pd
 from openpyxl import load_workbook, Workbook
 from datetime import datetime, date
 
+from .models import Appearance, Playlist, Track, TaskStatus
+from .forms import TrackForm, ExcelUploadForm
 
 def dashboard(request):
     qs = Appearance.objects.select_related("track","playlist").order_by("-updated_on")
-    return render(request, "tracker/dashboard.html", {"rows": qs})
+    scan_status = TaskStatus.objects.filter(name="scan_playlists").first()
+    return render(request, "tracker/dashboard.html", {
+        "rows": qs,
+        "scan_status": scan_status
+    })
 
 def add_track(request):
     if request.method == "POST":
@@ -77,7 +83,13 @@ def clean_date(value):
         return value.date()
     if isinstance(value, date):
         return value
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError:
+            return None
     return None
+
 
 
 def clean_int(value):
@@ -95,6 +107,8 @@ def clean_preview(value):
     if pd.isna(value) or value == "":
         return ""
     if isinstance(value, pd.Timestamp):
+        return value.date().isoformat()
+    if isinstance(value, datetime):
         return value.date().isoformat()
     if isinstance(value, date):
         return value.isoformat()
@@ -167,21 +181,20 @@ def confirm_import(request):
         messages.error(request, "Aucune donnée à importer.")
         return redirect("import_excel")
 
-    imported, skipped = 0, 0
+    mode = request.POST.get("mode", "complete")  # par défaut compléter
+    imported, updated = 0, 0
 
     for row in data:
-        # Track
         track, _ = Track.objects.get_or_create(
             name=row.get("Titre") or "Inconnu",
             defaults={"spotify_id": f"temp_{(row.get('Titre') or 'unk')}"[:64]}
         )
 
-        # Playlist
         playlist, _ = Playlist.objects.get_or_create(
             name=row.get("Playlist") or "Sans nom",
             defaults={
                 "spotify_id": f"temp_{(row.get('Playlist') or 'unk')}"[:64],
-                "followers": clean_int(row.get("Abonnés")),
+                "followers": int(row.get("Abonnés")) if row.get("Abonnés") not in ("", None) else None,
                 "description": row.get("Description") or "",
                 "url": row.get("PlaylistURL") or "",
                 "owner_name": row.get("Curateur") or "",
@@ -189,26 +202,65 @@ def confirm_import(request):
             }
         )
 
-        # Dates
         added_on = clean_date(row.get("Date d'ajout"))
         updated_on = clean_date(row.get("Mise à jour")) or datetime.today().date()
 
-        # Appearance (éviter doublons)
-        if not Appearance.objects.filter(track=track, playlist=playlist).exists():
-            Appearance.objects.create(
-                track=track,
-                playlist=playlist,
-                contact=row.get("Contact") or "",
-                state=row.get("Etat") or "",
-                added_on=added_on,
-                updated_on=updated_on
-            )
+        appearance, created = Appearance.objects.get_or_create(
+            track=track,
+            playlist=playlist,
+            defaults={
+                "contact": row.get("Contact") or "",
+                "state": row.get("Etat") or "",
+                "added_on": added_on,
+                "updated_on": updated_on,
+            }
+        )
+
+        if created:
             imported += 1
         else:
-            skipped += 1
+            if mode == "overwrite":
+                appearance.contact = row.get("Contact") or appearance.contact
+                appearance.state = row.get("Etat") or appearance.state
+                appearance.added_on = added_on or appearance.added_on
+                appearance.updated_on = updated_on
+                appearance.save()
+                updated += 1
+            elif mode == "complete":
+                changed = False
+                if not appearance.contact and row.get("Contact"):
+                    appearance.contact = row.get("Contact")
+                    changed = True
+                if not appearance.state and row.get("Etat"):
+                    appearance.state = row.get("Etat")
+                    changed = True
+                if not appearance.added_on and added_on:
+                    appearance.added_on = added_on
+                    changed = True
+                if changed:
+                    appearance.updated_on = updated_on
+                    appearance.save()
+                    updated += 1
 
-    # Nettoyer la session
     del request.session["import_preview"]
 
-    messages.success(request, f"{imported} apparitions importées, {skipped} ignorées (doublons).")
+    messages.success(request, f"{imported} apparitions importées, {updated} mises à jour.")
+    return redirect("dashboard")
+
+def run_scan_playlists_async():
+    status, _ = TaskStatus.objects.get_or_create(name="scan_playlists")
+    status.status = "running"
+    status.save()
+
+    try:
+        call_command("scan_playlists")
+        status.status = "done"
+    except Exception:
+        status.status = "error"
+    finally:
+        status.save()
+
+def run_scan_playlists(request):
+    threading.Thread(target=run_scan_playlists_async).start()
+    messages.info(request, "Scan des playlists lancé en arrière-plan ⏳")
     return redirect("dashboard")
