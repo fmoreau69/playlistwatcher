@@ -24,8 +24,8 @@ class Appearance(models.Model):
     playlist = models.ForeignKey(Playlist, on_delete=models.CASCADE)
     contact = models.EmailField(blank=True)
     state = models.CharField("État", max_length=120, blank=True)
-    added_on = models.DateField("Date d'ajout", auto_now_add=True)
-    updated_on = models.DateField("Mise à jour", auto_now=True)
+    added_on = models.DateField("Date d'ajout", null=True, blank=True)
+    updated_on = models.DateField("Mise à jour", null=True, blank=True)
 
     class Meta:
         unique_together = ("track", "playlist")
