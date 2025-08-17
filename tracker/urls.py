@@ -5,4 +5,5 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("tracks/new/", views.add_track, name="add_track"),
     path("export/", views.export_excel, name="export_excel"),
+    path('import-excel/', views.import_excel, name='import_excel'),
 ]

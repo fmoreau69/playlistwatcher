@@ -5,3 +5,6 @@ class TrackForm(forms.ModelForm):
     class Meta:
         model = Track
         fields = ["name", "spotify_id", "spotify_url"]
+
+class ExcelUploadForm(forms.Form):
+    file = forms.FileField(label="Choisir un fichier Excel")
