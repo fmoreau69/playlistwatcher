@@ -8,7 +8,13 @@
 {% for a in rows %}
 <tr>
 <td>{{ a.track.name }}</td>
-<td><a href="{{ a.playlist.url }}" target="_blank">{{ a.playlist.name }}</a></td>
+<td>
+  {% if a.playlist.url %}
+    <a href="{{ a.playlist.url }}" target="_blank">{{ a.playlist.name }}</a>
+  {% else %}
+    {{ a.playlist.name }}
+  {% endif %}
+</td>
 <td>{% if a.playlist.owner_url %}<a href="{{ a.playlist.owner_url }}" target="_blank">{{ a.playlist.owner_name }}</a>{% else %}{{ a.playlist.owner_name }}{% endif %}</td>
 <td>{{ a.contact }}</td>
 <td>{{ a.playlist.followers }}</td>

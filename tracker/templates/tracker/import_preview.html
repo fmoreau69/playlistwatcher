@@ -1,0 +1,26 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<h2>Prévisualisation de l'import</h2>
+<p>Vous allez importer {{ total }} lignes. Voici un aperçu :</p>
+
+<table border="1" cellpadding="5">
+  <tr>
+    {% for col in preview_data.0.keys %}
+      <th>{{ col }}</th>
+    {% endfor %}
+  </tr>
+  {% for row in preview_data %}
+  <tr>
+    {% for val in row.values %}
+      <td>{{ val }}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+
+<form method="post" action="{% url 'confirm_import' %}">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-success">Confirmer l'import</button>
+  <a href="{% url 'import_excel' %}" class="btn btn-secondary">Annuler</a>
+</form>
+{% endblock %}
