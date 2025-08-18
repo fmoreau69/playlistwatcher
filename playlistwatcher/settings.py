@@ -42,4 +42,10 @@ TEMPLATES = [{
 WSGI_APPLICATION = "playlistwatcher.wsgi.application"
 
 DATABASES = {"default":{"ENGINE":"django.db.backends.sqlite3","NAME": BASE_DIR/"db.sqlite3"}}
-STATIC_URL = "static/"
+
+# Fichiers statiques et médias
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [
+    BASE_DIR / 'tracker' / 'static',
+]

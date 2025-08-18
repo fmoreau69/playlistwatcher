@@ -33,6 +33,7 @@ class Appearance(models.Model):
 class TaskStatus(models.Model):
     name = models.CharField(max_length=100, unique=True)
     status = models.CharField(max_length=50, default="idle")  # idle, running, done
+    stop_requested = models.BooleanField(default=False)
     updated_on = models.DateTimeField(auto_now=True)
 
     def __str__(self):

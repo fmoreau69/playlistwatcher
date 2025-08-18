@@ -3,7 +3,7 @@ import threading
 from django.core.management import call_command
 from django.shortcuts import render, redirect
 from django.urls import reverse
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.contrib import messages
 from openpyxl import load_workbook, Workbook
 from datetime import datetime, date
@@ -250,10 +250,21 @@ def confirm_import(request):
 def run_scan_playlists_async():
     status, _ = TaskStatus.objects.get_or_create(name="scan_playlists")
     status.status = "running"
+    status.stop_requested = False
     status.save()
 
     try:
-        call_command("scan_playlists")
+        # Exemple d'itération sur des playlists
+        from tracker.models import Playlist
+        playlists = Playlist.objects.all()
+        for pl in playlists:
+            status.refresh_from_db()
+            if status.stop_requested:
+                status.status = "stopped"
+                status.save()
+                return  # arrêt propre
+            # ici on fait le scan normal pour la playlist pl
+            call_command("scan_playlist", str(pl.id))  # si ton management command accepte un ID
         status.status = "done"
     except Exception:
         status.status = "error"
@@ -264,3 +275,20 @@ def run_scan_playlists(request):
     threading.Thread(target=run_scan_playlists_async).start()
     messages.info(request, "Scan des playlists lancé en arrière-plan ⏳")
     return redirect("dashboard")
+
+def stop_scan_playlists(request):
+    status = TaskStatus.objects.filter(name="scan_playlists").first()
+    if status and status.status == "running":
+        status.stop_requested = True
+        status.save()
+        messages.info(request, "Demande d’arrêt du scan envoyée ⏹️")
+    else:
+        messages.warning(request, "Aucun scan en cours")
+    return redirect("dashboard")
+
+def scan_status(request):
+    status = TaskStatus.objects.filter(name="scan_playlists").first()
+    data = {
+        "status": status.status if status else "idle",
+    }
+    return JsonResponse(data)
