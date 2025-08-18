@@ -1,15 +1,22 @@
 import pandas as pd
 import threading
+import json, os
 from django.core.management import call_command
 from django.shortcuts import render, redirect
 from django.urls import reverse
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from django.utils import timezone
 from django.contrib import messages
 from openpyxl import load_workbook, Workbook
 from datetime import datetime, date
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from spotipy.oauth2 import SpotifyOAuth
+from .models import Appearance, Playlist, Track, TaskStatus, SpotifyCredentials, SpotifyToken
+from .forms import TrackForm, ExcelUploadForm, SpotifyCredentialsForm
 
-from .models import Appearance, Playlist, Track, TaskStatus
-from .forms import TrackForm, ExcelUploadForm
 
 def dashboard(request):
     qs = Appearance.objects.select_related("track","playlist").order_by("-updated_on")
@@ -62,6 +69,32 @@ def export_excel(request):
     wb.save(response)
     return response
 
+def export_pdf(request):
+    response = HttpResponse(content_type="application/pdf")
+    response['Content-Disposition'] = 'attachment; filename="export.pdf"'
+
+    p = canvas.Canvas(response, pagesize=A4)
+    width, height = A4
+
+    y = height - 50
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, y, "Export des apparitions")
+    y -= 30
+
+    p.setFont("Helvetica", 10)
+    for app in Appearance.objects.select_related("track", "playlist")[:100]:  # limiter pour test
+        text = f"{app.track.name} - {app.playlist.name} ({app.playlist.followers or 'N/A'} abonnés)"
+        p.drawString(50, y, text)
+        y -= 15
+        if y < 50:  # nouvelle page
+            p.showPage()
+            p.setFont("Helvetica", 10)
+            y = height - 50
+
+    p.showPage()
+    p.save()
+    return response
+
 # Mapping colonnes Excel → champs du modèle Appearance
 COLUMN_MAPPING = {
     'Titre': 'title',
@@ -90,8 +123,6 @@ def clean_date(value):
             return None
     return None
 
-
-
 def clean_int(value):
     """Nettoie un entier venant d'Excel, retourne None si vide"""
     if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -100,7 +131,6 @@ def clean_int(value):
         return int(value)
     s = str(value).replace("\u202f", "").replace(" ", "").strip()
     return int(s) if s.isdigit() else None
-
 
 def clean_preview(value):
     """Préparer les valeurs pour affichage dans la preview"""
@@ -113,7 +143,6 @@ def clean_preview(value):
     if isinstance(value, date):
         return value.isoformat()
     return str(value)
-
 
 def import_excel(request):
     if request.method == "POST":
@@ -173,7 +202,6 @@ def import_excel(request):
         form = ExcelUploadForm()
 
     return render(request, "tracker/import_excel.html", {"form": form})
-
 
 def confirm_import(request):
     data = request.session.get("import_preview")
@@ -292,3 +320,85 @@ def scan_status(request):
         "status": status.status if status else "idle",
     }
     return JsonResponse(data)
+
+
+CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+REDIRECT_URI = "https://localhost:8000/spotify/callback"
+SCOPE = "playlist-read-private"
+
+# @login_required
+def spotify_login(request):
+    sp_oauth = SpotifyOAuth(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri=REDIRECT_URI,
+        scope=SCOPE
+    )
+    auth_url = sp_oauth.get_authorize_url()
+    return redirect(auth_url)
+
+@csrf_exempt
+def spotify_callback(request):
+    code = request.GET.get("code")
+    error = request.GET.get("error")
+
+    if error:
+        return HttpResponseBadRequest(f"Erreur Spotify: {error}")
+    if not code:
+        return HttpResponseBadRequest("Code d'autorisation manquant.")
+
+    sp_oauth = SpotifyOAuth(
+        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+        client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+        redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/callback"),
+        scope="playlist-read-private playlist-read-collaborative"
+    )
+
+    token_info = sp_oauth.get_access_token(code, as_dict=True)
+    if not token_info:
+        return HttpResponseBadRequest("Impossible d'obtenir un token Spotify.")
+
+    expires_at = timezone.now() + timezone.timedelta(seconds=token_info["expires_in"])
+
+    # Sauvegarde en base
+    SpotifyToken.objects.update_or_create(
+        user=request.user,
+        defaults={
+            "access_token": token_info["access_token"],
+            "refresh_token": token_info["refresh_token"],
+            "expires_at": expires_at,
+        }
+    )
+
+    return HttpResponse("Authentification Spotify réussie ✅")
+
+def spotify_credentials(request):
+    # Essayer de charger depuis la base
+    try:
+        creds = SpotifyCredentials.objects.get(pk=1)
+    except SpotifyCredentials.DoesNotExist:
+        creds = SpotifyCredentials()
+
+    if request.method == "POST":
+        if "upload_file" in request.FILES:
+            # Importer depuis un fichier JSON
+            f = request.FILES["upload_file"]
+            data = json.load(f)
+            creds.client_id = data.get("client_id", "")
+            creds.client_secret = data.get("client_secret", "")
+            creds.redirect_uri = data.get("redirect_uri", "http://localhost:8000/callback")
+            creds.save()
+            messages.success(request, "Identifiants importés depuis le fichier.")
+            return redirect("spotify_credentials")
+        else:
+            # Sauvegarde via formulaire
+            form = SpotifyCredentialsForm(request.POST, instance=creds)
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Identifiants Spotify enregistrés.")
+                return redirect("spotify_credentials")
+    else:
+        form = SpotifyCredentialsForm(instance=creds)
+
+    return render(request, "tracker/spotify_credentials.html", {"form": form})

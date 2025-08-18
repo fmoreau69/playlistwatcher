@@ -1,5 +1,5 @@
 from django import forms
-from .models import Track
+from .models import Track, SpotifyCredentials
 
 class TrackForm(forms.ModelForm):
     class Meta:
@@ -8,3 +8,8 @@ class TrackForm(forms.ModelForm):
 
 class ExcelUploadForm(forms.Form):
     file = forms.FileField(label="Choisir un fichier Excel")
+
+class SpotifyCredentialsForm(forms.ModelForm):
+    class Meta:
+        model = SpotifyCredentials
+        fields = ["client_id", "client_secret", "redirect_uri"]

@@ -1,4 +1,29 @@
 from django.db import models
+from django.contrib.auth.models import User
+
+class SpotifyCredentials(models.Model):
+    client_id = models.CharField(max_length=200, blank=True, null=True)
+    client_secret = models.CharField(max_length=200, blank=True, null=True)
+    redirect_uri = models.URLField(default="http://localhost:8000/callback", blank=True)
+
+    # Tu peux forcer un seul enregistrement
+    singleton = models.BooleanField(default=True, editable=False, unique=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # impose qu’il n’existe qu’un enregistrement
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return "Identifiants Spotify"
+
+class SpotifyToken(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    access_token = models.TextField()
+    refresh_token = models.TextField()
+    expires_at = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.user.username} Spotify Token"
 
 class Track(models.Model):
     name = models.CharField(max_length=255)

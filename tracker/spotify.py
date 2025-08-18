@@ -1,10 +1,35 @@
-import os, time
+import os, time, json
 from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from typing import Iterable, Dict
 
 load_dotenv()
+
+def get_spotify_credentials():
+    """
+    Retourne les identifiants Spotify.
+    Priorité : DB > .env
+    """
+    try:
+        from tracker.models import SpotifyCredentials  # import tardif pour éviter les cycles
+        creds = SpotifyCredentials.objects.first()
+        if creds and creds.client_id and creds.client_secret:
+            return {
+                "client_id": creds.client_id,
+                "client_secret": creds.client_secret,
+                "redirect_uri": creds.redirect_uri,
+            }
+    except Exception:
+        # Si pas de DB ou pas migrée
+        pass
+
+    # fallback sur .env
+    return {
+        "client_id": os.getenv("SPOTIFY_CLIENT_ID"),
+        "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET"),
+        "redirect_uri": os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/callback"),
+    }
 
 def client():
     auth = SpotifyClientCredentials(
