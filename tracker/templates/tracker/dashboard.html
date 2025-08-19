@@ -5,7 +5,13 @@
       <a id="btn-stop" href="{% url 'stop_scan_playlists' %}" class="btn btn-danger">⏹️ Arrêter le scan</a>
       <span id="scan-status"></span>
     </div>
-    <h2>Apparitions</h2>
+    <h2>Apparitions ({{ active_playlists }} playlists actives)</h2>
+
+    {% if new_playlists_count %}
+    <div class="alert alert-success">
+        {{new_playlists_count}} nouvelles playlists détectées !
+    </div>
+    {% endif %}
     <div class="table-responsive">
         <table class="table table-striped table-bordered">
             <thead>

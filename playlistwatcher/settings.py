@@ -8,6 +8,9 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-key")
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
 
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "dashboard"
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -17,6 +20,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "tracker",
     "sslserver",
+    "django_extensions",
 ]
 
 MIDDLEWARE = [
@@ -31,7 +35,7 @@ MIDDLEWARE = [
 ROOT_URLCONF = "playlistwatcher.urls"
 TEMPLATES = [{
     "BACKEND":"django.template.backends.django.DjangoTemplates",
-    "DIRS":[BASE_DIR/"tracker"/"templates"],
+    "DIRS": [BASE_DIR / "tracker" / "templates"],
     "APP_DIRS":True,
     "OPTIONS":{"context_processors":[
         "django.template.context_processors.debug",

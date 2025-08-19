@@ -1,11 +1,11 @@
 import pandas as pd
 import threading
-import json, os
+import traceback
+import json
 from django.core.management import call_command
 from django.shortcuts import render, redirect
 from django.urls import reverse
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.contrib import messages
@@ -16,14 +16,30 @@ from reportlab.pdfgen import canvas
 from spotipy.oauth2 import SpotifyOAuth
 from .models import Appearance, Playlist, Track, TaskStatus, SpotifyCredentials, SpotifyToken
 from .forms import TrackForm, ExcelUploadForm, SpotifyCredentialsForm
+from tracker.spotify import get_spotify_credentials, client
 
 
 def dashboard(request):
-    qs = Appearance.objects.select_related("track","playlist").order_by("-updated_on")
+    qs = Appearance.objects.select_related("track", "playlist").order_by("-updated_on")
+
     scan_status = TaskStatus.objects.filter(name="scan_playlists").first()
+
+    # Nombre de playlists actives
+    active_playlists = Playlist.objects.count()
+
+    # Nombre de nouvelles playlists détectées depuis le dernier scan
+    new_playlists_count = 0
+    if scan_status and scan_status.extra_info:
+        try:
+            new_playlists_count = int(scan_status.extra_info)
+        except ValueError:
+            new_playlists_count = 0
+
     return render(request, "tracker/dashboard.html", {
         "rows": qs,
-        "scan_status": scan_status
+        "scan_status": scan_status,
+        "active_playlists": active_playlists,
+        "new_playlists_count": new_playlists_count,
     })
 
 def add_track(request):
@@ -282,27 +298,38 @@ def run_scan_playlists_async():
     status.save()
 
     try:
-        # Exemple d'itération sur des playlists
-        from tracker.models import Playlist
+        # Création du client Spotify (utilise token OAuth si disponible)
+        sp = client()
         playlists = Playlist.objects.all()
+
         for pl in playlists:
             status.refresh_from_db()
             if status.stop_requested:
                 status.status = "stopped"
                 status.save()
                 return  # arrêt propre
-            # ici on fait le scan normal pour la playlist pl
-            call_command("scan_playlist", str(pl.id))  # si ton management command accepte un ID
+
+            # Ici, on appelle la commande scan_playlist pour chaque track
+            # La commande elle-même devra utiliser `tracker.spotify.client()`
+            # donc pas besoin de passer le token
+            call_command("scan_playlists")  # scan_playlist se base sur client() interne
+
         status.status = "done"
-    except Exception:
+
+    except Exception as e:
         status.status = "error"
+        print(f"Erreur globale du scan: {e}")
+        traceback.print_exc()
+
     finally:
         status.save()
+
 
 def run_scan_playlists(request):
     threading.Thread(target=run_scan_playlists_async).start()
     messages.info(request, "Scan des playlists lancé en arrière-plan ⏳")
     return redirect("dashboard")
+
 
 def stop_scan_playlists(request):
     status = TaskStatus.objects.filter(name="scan_playlists").first()
@@ -314,6 +341,7 @@ def stop_scan_playlists(request):
         messages.warning(request, "Aucun scan en cours")
     return redirect("dashboard")
 
+
 def scan_status(request):
     status = TaskStatus.objects.filter(name="scan_playlists").first()
     data = {
@@ -322,23 +350,16 @@ def scan_status(request):
     return JsonResponse(data)
 
 
-CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
-REDIRECT_URI = "https://localhost:8000/spotify/callback"
-SCOPE = "playlist-read-private"
-
-# @login_required
+@login_required
 def spotify_login(request):
-    sp_oauth = SpotifyOAuth(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        redirect_uri=REDIRECT_URI,
-        scope=SCOPE
-    )
+    creds = get_spotify_credentials()
+    sp_oauth = SpotifyOAuth(**creds)
+
     auth_url = sp_oauth.get_authorize_url()
     return redirect(auth_url)
 
-@csrf_exempt
+
+@login_required  # mieux que csrf_exempt
 def spotify_callback(request):
     code = request.GET.get("code")
     error = request.GET.get("error")
@@ -348,33 +369,34 @@ def spotify_callback(request):
     if not code:
         return HttpResponseBadRequest("Code d'autorisation manquant.")
 
-    sp_oauth = SpotifyOAuth(
-        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-        redirect_uri=os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/callback"),
-        scope="playlist-read-private playlist-read-collaborative"
-    )
+    creds = get_spotify_credentials()
+    sp_oauth = SpotifyOAuth(**creds)
 
-    token_info = sp_oauth.get_access_token(code, as_dict=True)
+    try:
+        token_info = sp_oauth.get_access_token(code, as_dict=True)
+    except Exception as e:
+        return HttpResponseBadRequest(f"Erreur lors de l’échange du code: {e}")
+
     if not token_info:
         return HttpResponseBadRequest("Impossible d'obtenir un token Spotify.")
 
     expires_at = timezone.now() + timezone.timedelta(seconds=token_info["expires_in"])
 
-    # Sauvegarde en base
     SpotifyToken.objects.update_or_create(
-        user=request.user,
+        id=1,
         defaults={
             "access_token": token_info["access_token"],
-            "refresh_token": token_info["refresh_token"],
+            "refresh_token": token_info.get("refresh_token", ""),
             "expires_at": expires_at,
         }
     )
 
-    return HttpResponse("Authentification Spotify réussie ✅")
+    messages.success(request, "Authentification Spotify réussie ✅")
+    return redirect("dashboard")  # au lieu de HttpResponse brut
 
+
+@login_required
 def spotify_credentials(request):
-    # Essayer de charger depuis la base
     try:
         creds = SpotifyCredentials.objects.get(pk=1)
     except SpotifyCredentials.DoesNotExist:
@@ -382,17 +404,18 @@ def spotify_credentials(request):
 
     if request.method == "POST":
         if "upload_file" in request.FILES:
-            # Importer depuis un fichier JSON
             f = request.FILES["upload_file"]
             data = json.load(f)
-            creds.client_id = data.get("client_id", "")
-            creds.client_secret = data.get("client_secret", "")
-            creds.redirect_uri = data.get("redirect_uri", "http://localhost:8000/callback")
+
+            creds.client_id = data.get("client_id") or data.get("clientId") or ""
+            creds.client_secret = data.get("client_secret") or data.get("clientSecret") or ""
+            creds.redirect_uri = data.get("redirect_uri") or data.get("redirectUri") or get_spotify_credentials()["redirect_uri"]
             creds.save()
+
             messages.success(request, "Identifiants importés depuis le fichier.")
             return redirect("spotify_credentials")
+
         else:
-            # Sauvegarde via formulaire
             form = SpotifyCredentialsForm(request.POST, instance=creds)
             if form.is_valid():
                 form.save()
