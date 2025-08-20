@@ -1,6 +1,8 @@
+import time
 from django.core.management.base import BaseCommand
 from tracker.models import Track, Playlist, Appearance, TaskStatus, SpotifyToken
 from tracker.spotify import client, search_playlists_for_track
+from spotipy.exceptions import SpotifyException
 
 class Command(BaseCommand):
     help = "Scanne les playlists Spotify contenant chaque morceau et met à jour la base."
@@ -27,7 +29,21 @@ class Command(BaseCommand):
             for t in tracks:
                 self.stdout.write(self.style.MIGRATE_HEADING(f"→ {t.name} ({t.spotify_id})"))
 
-                for pl in search_playlists_for_track(sp, t.spotify_id, t.name, artist_hint="Donkey Shots"):
+                while True:  # boucle pour retenter si rate limit
+                    try:
+                        results = search_playlists_for_track(sp, t.spotify_id, t.name, artist_hint="Donkey Shots")
+                        break  # succès → on sort de la boucle
+                    except SpotifyException as e:
+                        if e.http_status == 429:  # Rate limit
+                            retry_after = int(e.headers.get("Retry-After", "5"))
+                            self.stdout.write(self.style.WARNING(
+                                f"Rate limit atteint. Attente de {retry_after} secondes..."
+                            ))
+                            time.sleep(retry_after + 1)  # attente +1 sec de marge
+                        else:
+                            raise  # autre erreur → on arrête
+
+                for pl in results:
                     playlist, _ = Playlist.objects.update_or_create(
                         spotify_id=pl["id"],
                         defaults=dict(
@@ -47,6 +63,7 @@ class Command(BaseCommand):
                     if was_created:
                         task_status.extra_info = str(created)
                         task_status.save(update_fields=["extra_info"])
+
         except Exception as e:
             task_status.status = "error"
             task_status.extra_info = str(e)
