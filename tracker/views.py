@@ -2,8 +2,9 @@ import pandas as pd
 import threading
 import traceback
 import json
+
 from django.core.management import call_command
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.contrib.auth.decorators import login_required
@@ -14,35 +15,114 @@ from datetime import datetime, date
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from spotipy.oauth2 import SpotifyOAuth
-from .models import Appearance, Playlist, Track, TaskStatus, SpotifyCredentials, SpotifyToken
+
+from .models import Appearance, Playlist, Artist, Track, TaskStatus, SpotifyCredentials, SpotifyToken
 from .forms import TrackForm, ExcelUploadForm, SpotifyCredentialsForm
 from tracker.spotify import get_spotify_credentials, client
 
 
 def dashboard(request):
-    qs = Appearance.objects.select_related("track", "playlist").order_by("-updated_on")
+    rows = Appearance.objects.select_related("track", "playlist").order_by("-updated_on")
 
-    scan_status = TaskStatus.objects.filter(name="scan_playlists").first()
-
-    # Nombre de playlists actives
+    # Actives playlists
     active_playlists = Playlist.objects.count()
 
-    # Nombre de nouvelles playlists détectées depuis le dernier scan
+    # Nombre de nouvelles playlists découvertes lors du dernier scan
+    task_status_scan = TaskStatus.objects.filter(name="scan_playlists").first()
+    task_status_discover = TaskStatus.objects.filter(name="discover_playlists").first()
+
     new_playlists_count = 0
-    if scan_status and scan_status.extra_info:
+    if task_status_scan and task_status_scan.extra_info:
         try:
-            new_playlists_count = int(scan_status.extra_info)
-        except ValueError:
+            # extra_info format : "created,updated,total"
+            new_playlists_count = int(task_status_scan.extra_info.split(",")[0])
+        except Exception:
             new_playlists_count = 0
 
+    # Artistes pour le filtre dropdown
+    artists = Artist.objects.all()
+    main_artist = artists.first() if artists.exists() else None
+
+    # Tracks du main_artist pour initialiser le dropdown
+    tracks = Track.objects.filter(artist=main_artist) if main_artist else []
+
+    # Récupération des compteurs depuis extra_json
+    scan_progress = task_status_scan.extra_json.get("current", 0) if task_status_scan and task_status_scan.extra_json else 0
+    discover_progress = task_status_discover.extra_json.get("current", 0) if task_status_discover and task_status_discover.extra_json else 0
+
     return render(request, "tracker/dashboard.html", {
-        "rows": qs,
-        "scan_status": scan_status,
+        "rows": rows,
         "active_playlists": active_playlists,
         "new_playlists_count": new_playlists_count,
+        "artists": artists,
+        "main_artist": main_artist,
+        "tracks": tracks,  # pour initialiser track-select
+        "discover_progress": discover_progress,
+        "scan_progress": scan_progress,
+        "task_scan": task_status_scan,
+        "task_discover": task_status_discover,
     })
 
-def add_track(request):
+
+# ----- Artiste and track management -----
+def artist_track_manage(request):
+    artists = Artist.objects.all().order_by("name")
+    tracks = Track.objects.select_related("artist").order_by("name")
+    return render(request, "tracker/artist_track_form.html", {
+        "artists": artists,
+        "tracks": tracks,
+    })
+
+
+# ----- Artiste management -----
+def artist_list(request):
+    artists = Artist.objects.all()
+    return render(request, "tracker/artist_list.html", {"artists": artists})
+
+def artist_create(request):
+    if request.method == "POST":
+        name = request.POST.get("name").strip()
+        spotify_id = request.POST.get("spotify_id").strip() or None
+        if name:
+            artist = Artist.objects.create(name=name, spotify_id=spotify_id)
+            messages.success(request, f"Artiste '{artist.name}' ajouté !")
+            return redirect("artist_list")
+        else:
+            messages.error(request, "Le nom de l'artiste est obligatoire.")
+
+    return render(request, "tracker/artist_form.html", {"artist": None})
+
+def artist_update(request, pk):
+    artist = get_object_or_404(Artist, pk=pk)
+
+    if request.method == "POST":
+        name = request.POST.get("name").strip()
+        spotify_id = request.POST.get("spotify_id").strip() or None
+        if name:
+            artist.name = name
+            artist.spotify_id = spotify_id
+            artist.save()
+            messages.success(request, f"Artiste '{artist.name}' mis à jour !")
+            return redirect("artist_list")
+        else:
+            messages.error(request, "Le nom de l'artiste est obligatoire.")
+
+    return render(request, "tracker/artist_form.html", {"artist": artist})
+
+def artist_delete(request, pk):
+    artist = get_object_or_404(Artist, pk=pk)
+    name = artist.name
+    artist.delete()
+    messages.success(request, f"Artiste '{name}' supprimé !")
+    return redirect("artist_list")
+
+
+# ----- Track management -----
+def track_list(request):
+    tracks = Track.objects.select_related("artist").all()
+    return render(request, "tracker/track_list.html", {"tracks": tracks})
+
+def track_create(request):
     if request.method == "POST":
         form = TrackForm(request.POST)
         if form.is_valid():
@@ -52,64 +132,167 @@ def add_track(request):
         form = TrackForm()
     return render(request, "tracker/track_form.html", {"form": form})
 
-def export_excel(request):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Apparitions"
+def track_update(request, pk):
+    track = get_object_or_404(Track, pk=pk)
 
-    headers = ["Titre", "Playlist", "Curateur", "Contact", "Abonnés", "Date d'ajout", "Etat", "Description", "Mise à jour"]
-    ws.append(headers)
+    if request.method == "POST":
+        form = TrackForm(request.POST, instance=track)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Titre '{track.name}' mis à jour !")
+            return redirect("track_list")
+        else:
+            messages.error(request, "Le formulaire contient des erreurs.")
+    else:
+        form = TrackForm(instance=track)
 
-    for app in Appearance.objects.select_related("track", "playlist"):
-        row = [
-            app.track.name,
-            app.playlist.name,
-            app.playlist.owner_name,
-            app.contact,
-            app.playlist.followers,
-            app.added_on,
-            app.state,
-            app.playlist.description,
-            app.updated_on,
-        ]
-        ws.append(row)
-        r = ws.max_row
+    return render(request, "tracker/track_form.html", {"form": form, "track": track})
 
-        if app.playlist.url:
-            ws.cell(row=r, column=2).hyperlink = app.playlist.url
-        if app.playlist.owner_url:
-            ws.cell(row=r, column=3).hyperlink = app.playlist.owner_url
+def track_delete(request, pk):
+    track = get_object_or_404(Track, pk=pk)
 
-    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="export.xlsx"'
-    wb.save(response)
-    return response
+    if request.method == "POST":
+        track.delete()
+        messages.success(request, f"Titre '{track.name}' supprimé.")
+        return redirect("track_list")
 
-def export_pdf(request):
-    response = HttpResponse(content_type="application/pdf")
-    response['Content-Disposition'] = 'attachment; filename="export.pdf"'
+    return render(request, "tracker/track_confirm_delete.html", {"track": track})
 
-    p = canvas.Canvas(response, pagesize=A4)
-    width, height = A4
+def tracks_by_artist(request, artist_id):
+    tracks = Track.objects.filter(artist_id=artist_id).values("id", "name")
+    return JsonResponse(list(tracks), safe=False)
 
-    y = height - 50
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(50, y, "Export des apparitions")
-    y -= 30
 
-    p.setFont("Helvetica", 10)
-    for app in Appearance.objects.select_related("track", "playlist")[:100]:  # limiter pour test
-        text = f"{app.track.name} - {app.playlist.name} ({app.playlist.followers or 'N/A'} abonnés)"
-        p.drawString(50, y, text)
-        y -= 15
-        if y < 50:  # nouvelle page
-            p.showPage()
-            p.setFont("Helvetica", 10)
-            y = height - 50
+# ----- Discover playlists -----
+def run_discover_playlists_async():
+    status, _ = TaskStatus.objects.get_or_create(name="discover_playlists")
+    status.status = "running"
+    status.stop_requested = False
+    status.extra_info = "0"
+    status.save()
 
-    p.showPage()
-    p.save()
-    return response
+    try:
+        # Appel de la commande discover_playlists
+        call_command("discover_playlists")
+        status.status = "done"
+
+    except Exception as e:
+        status.status = "error"
+        status.extra_info = str(e)
+        print(f"Erreur globale de la découverte: {e}")
+        traceback.print_exc()
+
+    finally:
+        status.save()
+
+
+def run_discover_playlists(request):
+    threading.Thread(target=run_discover_playlists_async, daemon=True).start()
+    messages.info(request, "Découverte de nouvelles playlists lancée en arrière-plan ⏳")
+    return redirect("dashboard")
+
+
+def stop_discover_playlists(request):
+    status = TaskStatus.objects.filter(name="discover_playlists").first()
+    if status and status.status == "running":
+        status.stop_requested = True
+        status.save()
+        messages.info(request, "Demande d’arrêt de la découverte envoyée ⏹️")
+    else:
+        messages.warning(request, "Aucune découverte en cours")
+    return redirect("dashboard")
+
+
+# ----- Scan playlists -----
+def run_scan_playlists_async():
+    status, _ = TaskStatus.objects.get_or_create(name="scan_playlists")
+    status.status = "running"
+    status.stop_requested = False
+    status.save()
+
+    try:
+        # La commande scan_playlists utilise le client interne
+        call_command("scan_playlists")
+        status.status = "done"
+
+    except Exception as e:
+        status.status = "error"
+        status.extra_info = str(e)
+        print(f"Erreur globale du scan: {e}")
+        traceback.print_exc()
+
+    finally:
+        status.save()
+
+
+def run_scan_playlists(request):
+    threading.Thread(target=run_scan_playlists_async, daemon=True).start()
+    messages.info(request, "Scan des playlists lancé en arrière-plan ⏳")
+    return redirect("dashboard")
+
+
+def stop_scan_playlists(request):
+    status = TaskStatus.objects.filter(name="scan_playlists").first()
+    if status and status.status == "running":
+        status.stop_requested = True
+        status.save()
+        messages.info(request, "Demande d’arrêt du scan envoyée ⏹️")
+    else:
+        messages.warning(request, "Aucun scan en cours")
+    return redirect("dashboard")
+
+
+def scan_status(request):
+    task_status = TaskStatus.objects.filter(name="scan_playlists").first()
+    data = {"status": "idle", "extra_info": "", "current": 0, "total": 0}
+
+    if task_status:
+        data["status"] = task_status.status
+        data["extra_info"] = task_status.extra_info or ""
+
+        # Si extra_info est du style "X nouvelles, Y mises à jour"
+        try:
+            parts = (task_status.extra_info or "0 nouvelles, 0 mises à jour").split(",")
+            current = int(parts[0].strip().split()[0])  # X
+            total = int(parts[1].strip().split()[0])    # Y
+            data["current"] = current
+            data["total"] = total
+        except Exception:
+            # fallback si parsing impossible
+            data["current"] = 0
+            data["total"] = 0
+
+    return JsonResponse(data)
+
+
+def discover_status(request):
+    task_status = TaskStatus.objects.filter(name="discover_playlists").first()
+    data = {"status": "idle", "extra_info": "", "current": 0, "total": 0}
+
+    if task_status:
+        data["status"] = task_status.status
+        data["extra_info"] = task_status.extra_info or ""
+
+        # D'abord on regarde si extra_json est disponible
+        if task_status.extra_json and isinstance(task_status.extra_json, dict):
+            data["current"] = task_status.extra_json.get("current", 0)
+            data["total"] = task_status.extra_json.get("total", 0)
+        else:
+            # Fallback : tentative de parsing de extra_info
+            try:
+                # Exemple attendu : "12 nouvelles, 3 maj, 40 explorées"
+                parts = (task_status.extra_info or "").split(",")
+                # On cherche le nombre avant "explorées"
+                explored_part = next((p for p in parts if "explorée" in p), None)
+                if explored_part:
+                    current = int(explored_part.strip().split()[0])
+                    data["current"] = current
+                    data["total"] = current  # pas de total dispo
+            except Exception:
+                pass  # laisse les valeurs par défaut
+
+    return JsonResponse(data)
+
 
 # Mapping colonnes Excel → champs du modèle Appearance
 COLUMN_MAPPING = {
@@ -291,63 +474,64 @@ def confirm_import(request):
     messages.success(request, f"{imported} apparitions importées, {updated} mises à jour.")
     return redirect("dashboard")
 
-def run_scan_playlists_async():
-    status, _ = TaskStatus.objects.get_or_create(name="scan_playlists")
-    status.status = "running"
-    status.stop_requested = False
-    status.save()
+def export_excel(request):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Apparitions"
 
-    try:
-        # Création du client Spotify (utilise token OAuth si disponible)
-        sp = client()
-        playlists = Playlist.objects.all()
+    headers = ["Titre", "Playlist", "Curateur", "Contact", "Abonnés", "Date d'ajout", "Etat", "Description", "Mise à jour"]
+    ws.append(headers)
 
-        for pl in playlists:
-            status.refresh_from_db()
-            if status.stop_requested:
-                status.status = "stopped"
-                status.save()
-                return  # arrêt propre
+    for app in Appearance.objects.select_related("track", "playlist"):
+        row = [
+            app.track.name,
+            app.playlist.name,
+            app.playlist.owner_name,
+            app.contact,
+            app.playlist.followers,
+            app.added_on,
+            app.state,
+            app.playlist.description,
+            app.updated_on,
+        ]
+        ws.append(row)
+        r = ws.max_row
 
-            # Ici, on appelle la commande scan_playlist pour chaque track
-            # La commande elle-même devra utiliser `tracker.spotify.client()`
-            # donc pas besoin de passer le token
-            call_command("scan_playlists")  # scan_playlist se base sur client() interne
+        if app.playlist.url:
+            ws.cell(row=r, column=2).hyperlink = app.playlist.url
+        if app.playlist.owner_url:
+            ws.cell(row=r, column=3).hyperlink = app.playlist.owner_url
 
-        status.status = "done"
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="export.xlsx"'
+    wb.save(response)
+    return response
 
-    except Exception as e:
-        status.status = "error"
-        print(f"Erreur globale du scan: {e}")
-        traceback.print_exc()
+def export_pdf(request):
+    response = HttpResponse(content_type="application/pdf")
+    response['Content-Disposition'] = 'attachment; filename="export.pdf"'
 
-    finally:
-        status.save()
+    p = canvas.Canvas(response, pagesize=A4)
+    width, height = A4
 
+    y = height - 50
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(50, y, "Export des apparitions")
+    y -= 30
 
-def run_scan_playlists(request):
-    threading.Thread(target=run_scan_playlists_async).start()
-    messages.info(request, "Scan des playlists lancé en arrière-plan ⏳")
-    return redirect("dashboard")
+    p.setFont("Helvetica", 10)
+    for app in Appearance.objects.select_related("track", "playlist")[:100]:  # limiter pour test
+        text = f"{app.track.name} - {app.playlist.name} ({app.playlist.followers or 'N/A'} abonnés)"
+        p.drawString(50, y, text)
+        y -= 15
+        if y < 50:  # nouvelle page
+            p.showPage()
+            p.setFont("Helvetica", 10)
+            y = height - 50
 
-
-def stop_scan_playlists(request):
-    status = TaskStatus.objects.filter(name="scan_playlists").first()
-    if status and status.status == "running":
-        status.stop_requested = True
-        status.save()
-        messages.info(request, "Demande d’arrêt du scan envoyée ⏹️")
-    else:
-        messages.warning(request, "Aucun scan en cours")
-    return redirect("dashboard")
-
-
-def scan_status(request):
-    status = TaskStatus.objects.filter(name="scan_playlists").first()
-    data = {
-        "status": status.status if status else "idle",
-    }
-    return JsonResponse(data)
+    p.showPage()
+    p.save()
+    return response
 
 
 @login_required

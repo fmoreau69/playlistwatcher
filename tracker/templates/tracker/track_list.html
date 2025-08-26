@@ -1,0 +1,33 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Liste des titres</h2>
+    <a href="{% url 'track_create' %}" class="btn btn-primary mb-3">➕ Ajouter un titre</a>
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Nom</th>
+                <th>Artiste</th>
+                <th>Spotify ID</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for track in tracks %}
+            <tr>
+                <td>{{ track.name }}</td>
+                <td>{{ track.artist.name }}</td>
+                <td>{{ track.spotify_id|default_if_none:"-" }}</td>
+                <td>
+                    <a href="{% url 'track_update' track.id %}" class="btn btn-sm btn-warning">✏️ Modifier</a>
+                    <a href="{% url 'track_delete' track.id %}" class="btn btn-sm btn-danger">🗑 Supprimer</a>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Aucun titre enregistré.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
