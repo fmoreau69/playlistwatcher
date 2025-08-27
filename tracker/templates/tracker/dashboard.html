@@ -3,98 +3,90 @@
 
 <!-- Accordéon général des contrôles -->
 <div class="accordion mb-4" id="controlsAccordion">
-    <div class="accordion-item">
-        <h2 class="accordion-header" id="headingControls">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#collapseControls" aria-expanded="false" aria-controls="collapseControls">
-                ⚙️ Contrôles (Découverte, Scan & Filtres)
-            </button>
-        </h2>
-        <div id="collapseControls" class="accordion-collapse collapse" aria-labelledby="headingControls"
-             data-bs-parent="#controlsAccordion">
-            <div class="accordion-body" style="background-color:#f0f4f8;">
+  <div class="accordion-item">
+    <h2 class="accordion-header" id="headingControls">
+      <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+              data-bs-target="#collapseControls" aria-expanded="false" aria-controls="collapseControls">
+        ⚙️ Contrôles (Découverte, Scan & Filtres)
+      </button>
+    </h2>
+    <div id="collapseControls" class="accordion-collapse collapse" aria-labelledby="headingControls">
+      <div class="accordion-body" style="background-color:#f0f4f8;">
 
-                <!-- Découverte et Scan -->
-                <div class="d-flex flex-wrap gap-3 mb-3">
-                    <!-- Découverte -->
-                    <div class="flex-grow-1 min-w-200">
-                        <div class="btn-group mb-2 flex-wrap">
-                            <a id="btn-discover" href="{% url 'discover_playlists' %}" class="btn btn-primary mb-1">🌍
-                                Lancer la découverte</a>
-                            <a id="btn-stop-discover" href="{% url 'stop_discover_playlists' %}"
-                               class="btn btn-danger mb-1">⏹️ Arrêter</a>
-                        </div>
-                        <span id="discover-status" class="d-block mb-2"></span>
-                        <div class="progress" style="height: 22px;">
-                            <div id="discover-progress" class="progress-bar bg-primary" role="progressbar"
-                                 style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0 explorées
-                            </div>
-                        </div>
-                    </div>
+        <!-- Découverte et Scan -->
+        <div class="d-flex flex-wrap gap-3 mb-3">
+          <!-- Découverte -->
+          <div class="flex-grow-1 min-w-200">
+            <div class="btn-group mb-2 flex-wrap">
+              <a id="btn-discover" href="{% url 'discover_playlists' %}" class="btn btn-primary mb-1">🌍 Lancer la découverte</a>
+              <a id="btn-stop-discover" href="{% url 'stop_discover_playlists' %}" class="btn btn-danger mb-1">⏹️ Arrêter</a>
+            </div>
+            <span id="discover-status" class="d-block mb-2"></span>
+            <div class="progress" style="height: 22px;">
+              <div id="discover-progress" class="progress-bar bg-primary" role="progressbar"
+                   style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0 explorées
+              </div>
+            </div>
+          </div>
 
-
-                    <!-- Scan -->
-                    <div class="flex-grow-1 min-w-200">
-                        <div class="btn-group mb-2 flex-wrap">
-                            <a id="btn-scan" href="{% url 'scan_playlists' %}" class="btn btn-warning mb-1">🔄 Scanner
-                                les playlists</a>
-                            <a id="btn-stop" href="{% url 'stop_scan_playlists' %}" class="btn btn-danger mb-1">⏹️
-                                Arrêter</a>
-                        </div>
-                        <span id="scan-status" class="d-block mb-2"></span>
-                        <div class="progress" style="height: 22px;">
-                            <div id="scan-progress" class="progress-bar bg-warning" role="progressbar"
-                                 style="width: {{ scan_progress }}%;" aria-valuenow="{{ scan_progress }}"
-                                 aria-valuemin="0" aria-valuemax="100">{{ scan_progress }}%
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Accordéon filtres Artiste / Titres -->
-                <div class="accordion mt-3" id="filtersAccordion">
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingFilters">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
-                                    data-bs-target="#collapseFilters" aria-expanded="false"
-                                    aria-controls="collapseFilters">
-                                🎛️ Filtres Artiste / Titres
-                            </button>
-                        </h2>
-                        <div id="collapseFilters" class="accordion-collapse collapse" aria-labelledby="headingFilters"
-                             data-bs-parent="#filtersAccordion">
-                            <div class="accordion-body">
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-6">
-                                        <label for="artist-select" class="form-label fw-bold">🎤 Artiste :</label>
-                                        <select id="artist-select" class="form-select">
-                                            {% for artist in artists %}
-                                            <option value="{{ artist.id }}" {% if artist.id == main_artist.id %}selected{% endif %}>
-                                                {{ artist.name }}
-                                            </option>
-                                            {% endfor %}
-                                        </select>
-                                    </div>
-                                    <div class="col-12 col-md-6">
-                                        <label for="track-select" class="form-label fw-bold">🎵 Titres :</label>
-                                        <select id="track-select" class="form-select" multiple>
-                                            {% for track in tracks %}
-                                            <option value="{{ track.id }}">{{ track.name }}</option>
-                                            {% endfor %}
-                                        </select>
-                                        <small class="form-text text-muted">
-                                            Maintenir Ctrl ou Cmd pour sélectionner plusieurs titres.
-                                        </small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div> <!-- fin filtres accordéon -->
-
-            </div> <!-- fin accordion-body -->
+          <!-- Scan -->
+          <div class="flex-grow-1 min-w-200">
+            <div class="btn-group mb-2 flex-wrap">
+              <a id="btn-scan" href="{% url 'scan_playlists' %}" class="btn btn-warning mb-1">🔄 Scanner les playlists</a>
+              <a id="btn-stop" href="{% url 'stop_scan_playlists' %}" class="btn btn-danger mb-1">⏹️ Arrêter</a>
+            </div>
+            <span id="scan-status" class="d-block mb-2"></span>
+            <div class="progress" style="height: 22px;">
+              <div id="scan-progress" class="progress-bar bg-warning" role="progressbar"
+                   style="width: {{ scan_progress }}%;" aria-valuenow="{{ scan_progress }}"
+                   aria-valuemin="0" aria-valuemax="100">{{ scan_progress }}%
+              </div>
+            </div>
+          </div>
         </div>
+
+        <!-- Accordéon filtres Artiste / Titres -->
+        <div class="accordion mt-3" id="filtersAccordion">
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="headingFilters">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                      data-bs-target="#collapseFilters" aria-expanded="false" aria-controls="collapseFilters">
+                🎛️ Filtres Artiste / Titres
+              </button>
+            </h2>
+            <div id="collapseFilters" class="accordion-collapse collapse" aria-labelledby="headingFilters">
+              <div class="accordion-body">
+                <div class="row g-3">
+                  <div class="col-12 col-md-6">
+                    <label for="artist-select" class="form-label fw-bold">🎤 Artiste :</label>
+                    <select id="artist-select" class="form-select">
+                      {% for artist in artists %}
+                      <option value="{{ artist.id }}" {% if artist.id == main_artist.id %}selected{% endif %}>
+                        {{ artist.name }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label for="track-select" class="form-label fw-bold">🎵 Titres :</label>
+                    <select id="track-select" class="form-select" multiple>
+                      {% for track in tracks %}
+                      <option value="{{ track.id }}">{{ track.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <small class="form-text text-muted">
+                      Maintenir Ctrl ou Cmd pour sélectionner plusieurs titres.
+                    </small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div> <!-- fin filtres accordéon -->
+
+      </div> <!-- fin accordion-body -->
     </div>
+  </div>
 </div>
 
 <!-- Tableau des apparitions -->

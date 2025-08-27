@@ -2,17 +2,17 @@ let lastNewAppearances = 0;
 let lastScanStatus = "";
 let lastDiscoverStatus = "";
 
-// Mise à jour des titres selon l'artiste sélectionné
+// ===== Mise à jour des titres selon l'artiste sélectionné =====
 document.addEventListener("DOMContentLoaded", function() {
     const artistSelect = document.getElementById("artist-select");
     if (artistSelect) {
         artistSelect.addEventListener("change", function() {
             const artistId = this.value;
-            fetch(`/artist/${artistId}/tracks/`)  // route Django qui renvoie les tracks en JSON
+            fetch(`/artist/${artistId}/tracks/`)
                 .then(resp => resp.json())
                 .then(data => {
                     const trackSelect = document.getElementById("track-select");
-                    trackSelect.innerHTML = "";  // vide l'ancien contenu
+                    trackSelect.innerHTML = "";
                     data.forEach(track => {
                         const option = document.createElement("option");
                         option.value = track.id;
@@ -24,33 +24,57 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
-// Mise à jour de l'état de l'accordéon "Controls"
-document.addEventListener("DOMContentLoaded", function() {
-    const controlsBtn = document.querySelector('[data-bs-target="#collapseControls"]');
-    const controlsCollapse = document.getElementById("collapseControls");
+// ===== Persistance générique de l'état des accordéons =====
+document.addEventListener("DOMContentLoaded", function () {
+    const allAccordions = document.querySelectorAll(".accordion");
+    allAccordions.forEach(accordion => {
+        const collapses = accordion.querySelectorAll(":scope > .accordion-item > .accordion-collapse");
+        collapses.forEach(coll => {
+            if (!coll.id) return;
+            const key = "accordionState:" + coll.id;
+            const saved = localStorage.getItem(key);
+            const toggles = Array.from(coll.parentElement.querySelectorAll(`[data-bs-target="#${coll.id}"], [href="#${coll.id}"]`));
 
-    if (controlsBtn && controlsCollapse) {
-        // Récupérer l'état enregistré
-        const savedState = localStorage.getItem("controlsExpanded");
-        if (savedState === "true") {
-            controlsCollapse.classList.add("show");
-            controlsBtn.setAttribute("aria-expanded", "true");
-        } else {
-            controlsCollapse.classList.remove("show");
-            controlsBtn.setAttribute("aria-expanded", "false");
-        }
+            if (saved === "open") {
+                const prevTransition = coll.style.transition;
+                coll.style.transition = "none";
+                coll.classList.add("show");
+                toggles.forEach(btn => {
+                    btn.classList.remove("collapsed");
+                    btn.setAttribute("aria-expanded", "true");
+                });
+                setTimeout(() => { coll.style.transition = prevTransition || ""; }, 20);
+            } else if (saved === "closed") {
+                coll.classList.remove("show");
+                toggles.forEach(btn => {
+                    btn.classList.add("collapsed");
+                    btn.setAttribute("aria-expanded", "false");
+                });
+            }
 
-        // Écouter les changements d'ouverture/fermeture
-        controlsCollapse.addEventListener("shown.bs.collapse", () => {
-            localStorage.setItem("controlsExpanded", "true");
+            coll.addEventListener("shown.bs.collapse", () => localStorage.setItem(key, "open"));
+            coll.addEventListener("hidden.bs.collapse", () => localStorage.setItem(key, "closed"));
         });
-        controlsCollapse.addEventListener("hidden.bs.collapse", () => {
-            localStorage.setItem("controlsExpanded", "false");
-        });
-    }
+    });
 });
 
-// Met à jour le statut du scan et de la découverte
+// ===== Vérification du client Spotify =====
+function checkSpotifyStatus(callback) {
+    fetch("/spotify_status/")
+        .then(resp => resp.json())
+        .then(data => {
+            if (!data.ok) {
+                showNotification("⚠️ " + (data.message || "Spotify non disponible"));
+            } else if (callback) {
+                callback();
+            }
+        })
+        .catch(() => {
+            showNotification("⚠️ Impossible de vérifier l'état Spotify");
+        });
+}
+
+// ===== Mise à jour des statuts =====
 function updateStatuses() {
     fetch("/scan_status/")
         .then(resp => resp.json())
@@ -61,7 +85,7 @@ function updateStatuses() {
         .then(data => updateDiscover(data));
 }
 
-// Mise à jour du scan
+// ===== Mise à jour du scan =====
 function updateScan(data) {
     let statusHtml = "";
     const scanBtn = document.getElementById("btn-scan");
@@ -119,7 +143,7 @@ function updateScan(data) {
     lastScanStatus = data.status;
 }
 
-// Mise à jour de la découverte
+// ===== Mise à jour de la découverte =====
 function updateDiscover(data) {
     let statusHtml = "";
     const discoverBtn = document.getElementById("btn-discover");
@@ -158,10 +182,10 @@ function updateDiscover(data) {
 
     document.getElementById("discover-status").innerHTML = statusHtml;
 
-    // Progression de la découverte (affichage du compteur exploré)
+    // Progression de la découverte
     if (progressBar) {
         const explored = data.extra_json?.explored || 0;
-        const maxDisplay = 100; // largeur max arbitraire pour la progress bar
+        const maxDisplay = 100;
         const widthPercent = Math.min(explored, maxDisplay);
         progressBar.style.width = widthPercent + "%";
         progressBar.setAttribute("aria-valuenow", widthPercent);
@@ -171,7 +195,7 @@ function updateDiscover(data) {
     lastDiscoverStatus = data.status;
 }
 
-// Notification générique
+// ===== Notification générique =====
 function showNotification(message) {
     const notification = document.createElement("div");
     notification.className = "alert alert-success alert-dismissible fade show";
@@ -182,6 +206,32 @@ function showNotification(message) {
     setTimeout(() => { notification.remove(); }, 5000);
 }
 
-// Auto-refresh toutes les 5s
+// ===== Boutons Scan avec vérification Spotify =====
+document.addEventListener("DOMContentLoaded", () => {
+    const scanBtn = document.getElementById("btn-scan");
+    if (scanBtn) {
+        scanBtn.addEventListener("click", () => {
+            checkSpotifyStatus(() => {
+                fetch("/run_scan_playlists/")
+                    .then(() => showNotification("Scan lancé en arrière-plan ⏳"));
+            });
+        });
+    }
+});
+
+// ===== Boutons Discover avec vérification Spotify =====
+document.addEventListener("DOMContentLoaded", () => {
+    const discoverBtn = document.getElementById("btn-discover");
+    if (discoverBtn) {
+        discoverBtn.addEventListener("click", () => {
+            checkSpotifyStatus(() => {
+                fetch("/run_discover_playlists/")
+                    .then(() => showNotification("Découverte lancée en arrière-plan ⏳"));
+            });
+        });
+    }
+});
+
+// ===== Auto-refresh toutes les 5s =====
 setInterval(updateStatuses, 5000);
 updateStatuses();

@@ -42,39 +42,43 @@ def get_spotify_credentials():
         "scope": scope,
     }
 
-
-def client() -> spotipy.Spotify:
+def get_client() -> spotipy.Spotify | None:
     """
-    Retourne un client Spotify prêt à l'emploi.
-    Priorité :
-      1. Token OAuth stocké en base (SpotifyToken)
-      2. Credentials en base (SpotifyCredentials)
-      3. Variables d'environnement
+    Retourne un client Spotipy si un token ou des credentials valides existent.
+    - Si un token utilisateur existe : on l'utilise et on le refresh si expiré
+    - Sinon fallback sur credentials en base ou dans les variables d'environnement
+    - Retourne None si rien de valide
     """
     token_obj = SpotifyToken.objects.first()
+    now = timezone.now()
+
     if token_obj:
-        now = timezone.now()
         if token_obj.expires_at <= now:
             # Token expiré → refresh
             creds = SpotifyCredentials.objects.first()
             client_id = creds.decrypted_client_id if creds and fernet else (creds.client_id if creds else os.getenv("SPOTIFY_CLIENT_ID"))
             client_secret = creds.decrypted_client_secret if creds and fernet else (creds.client_secret if creds else os.getenv("SPOTIFY_CLIENT_SECRET"))
 
-            url = "https://accounts.spotify.com/api/token"
-            data = {
-                "grant_type": "refresh_token",
-                "refresh_token": token_obj.refresh_token,
-                "client_id": client_id,
-                "client_secret": client_secret,
-            }
-            resp = requests.post(url, data=data)
-            resp.raise_for_status()
-            payload = resp.json()
+            try:
+                url = "https://accounts.spotify.com/api/token"
+                data = {
+                    "grant_type": "refresh_token",
+                    "refresh_token": token_obj.refresh_token,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                }
+                resp = requests.post(url, data=data, timeout=10)
+                resp.raise_for_status()
+                payload = resp.json()
 
-            token_obj.access_token = payload["access_token"]
-            expires_in = payload.get("expires_in", 3600)
-            token_obj.expires_at = now + datetime.timedelta(seconds=expires_in)
-            token_obj.save()
+                token_obj.access_token = payload["access_token"]
+                expires_in = payload.get("expires_in", 3600)
+                token_obj.expires_at = now + datetime.timedelta(seconds=expires_in)
+                token_obj.save()
+            except Exception:
+                # Refresh échoué → suppression du token pour forcer nouvel OAuth
+                token_obj.delete()
+                return None
 
         return spotipy.Spotify(auth=token_obj.access_token, requests_timeout=20, retries=3)
 
@@ -87,16 +91,37 @@ def client() -> spotipy.Spotify:
         return spotipy.Spotify(client_credentials_manager=auth, requests_timeout=20, retries=3)
 
     # Fallback avec env
-    auth = SpotifyClientCredentials(
-        client_id=os.getenv("SPOTIFY_CLIENT_ID"),
-        client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
-    )
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return None
+
+    auth = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
     return spotipy.Spotify(client_credentials_manager=auth, requests_timeout=20, retries=3)
+
+def safe_spotify_call(func, *args, **kwargs):
+    """
+    Exécute un appel Spotipy en gérant les rate limits (429).
+    - func : fonction Spotipy à appeler
+    - args, kwargs : arguments de la fonction
+    """
+    while True:
+        try:
+            return func(*args, **kwargs)
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                retry_after = int(e.headers.get("Retry-After", "5"))
+                print(f"⚠️ Rate limit atteint. Attente de {retry_after} secondes...")
+                time.sleep(retry_after + 1)
+            else:
+                raise
 
 def playlist_contains_track(sp: spotipy.Spotify, playlist_id: str, track_id: str) -> bool:
     offset = 0
     while True:
-        items = sp.playlist_items(playlist_id, fields="items.track.id,total,next", offset=offset, additional_types=["track"])
+        items = safe_spotify_call(sp.playlist_items, playlist_id, fields="items.track.id,total,next", offset=offset, additional_types=["track"])
+        if not items or not items.get("items"):
+            return False
         for it in items["items"]:
             t = it.get("track") or {}
             if t and t.get("id") == track_id:
@@ -119,18 +144,21 @@ def search_playlists_for_track(sp: spotipy.Spotify, track_id: str, track_name: s
     ]
     seen = set()
     for q in queries:
-        results = sp.search(q=q, type="playlist", limit=50)
+        try:
+            results = safe_spotify_call(sp.search, q=q, type="playlist", limit=50)
+        except Exception as e:
+            print(f"⚠️ Recherche échouée pour '{q}': {e}")
+            continue
         for pl in results.get("playlists", {}).get("items", []):
-            if not pl or not pl.get("id"):  # ✅ sécurité anti-None
-                continue
+            pl.get("id")
             pid = pl["id"]
             if pid in seen:
                 continue
             seen.add(pid)
             # Vérif contenu
-            if playlist_contains_track(sp, pid, track_id):
+            if safe_spotify_call(playlist_contains_track, sp, pid, track_id):
                 try:
-                    full = sp.playlist(
+                    full = safe_spotify_call(sp.playlist,
                         pid,
                         fields="id,name,external_urls.spotify,owner(display_name,external_urls.spotify),followers.total,description",
                     )
@@ -162,14 +190,17 @@ def search_discover_playlists(sp: spotipy.Spotify, max_per_query: int = 200) -> 
     for q in keywords:
         offset = 0
         while offset < max_per_query:
-            results = sp.search(q=q, type="playlist", limit=50, offset=offset)
+            try:
+                results = safe_spotify_call(sp.search, q=q, type="playlist", limit=50, offset=offset)
+            except Exception as e:
+                print(f"⚠️ Recherche échouée pour '{q}': {e}")
+                continue
             items = results.get("playlists", {}).get("items", [])
             if not items:
                 break
 
             for pl in items:
-                if not pl or not pl.get("id"):
-                    continue
+                pl.get("id")
                 pid = pl["id"]
                 if pid in seen:
                     continue
@@ -177,7 +208,7 @@ def search_discover_playlists(sp: spotipy.Spotify, max_per_query: int = 200) -> 
 
                 # Récupération détaillée de la playlist
                 try:
-                    full = sp.playlist(
+                    full = safe_spotify_call(sp.playlist,
                         pid,
                         fields="id,name,external_urls.spotify,owner(display_name,external_urls.spotify),followers.total,description",
                     )

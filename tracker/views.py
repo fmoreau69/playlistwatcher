@@ -10,15 +10,14 @@ from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.contrib import messages
-from openpyxl import load_workbook, Workbook
-from datetime import datetime, date
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from spotipy.oauth2 import SpotifyOAuth
 
 from .models import Appearance, Playlist, Artist, Track, TaskStatus, SpotifyCredentials, SpotifyToken
 from .forms import TrackForm, ExcelUploadForm, SpotifyCredentialsForm
-from tracker.spotify import get_spotify_credentials, client
+from .utils.preview_data import build_apparitions_preview, build_playlists_preview
+from .utils.import_data import import_preview_apparitions, import_preview_playlists
+from .utils.export_data import export_apparitions_excel, export_apparitions_pdf
+from tracker.spotify import get_spotify_credentials, get_client
 
 
 def dashboard(request):
@@ -187,6 +186,13 @@ def run_discover_playlists_async():
 
 
 def run_discover_playlists(request):
+    # Vérifier que le client Spotify est valide avant de lancer la tâche
+    sp = get_client()
+    if not sp:
+        messages.error(request, "⚠️ Aucun client Spotify valide trouvé. Veuillez connecter votre compte.")
+        return redirect("dashboard")
+
+    # Lancer la découverte en thread
     threading.Thread(target=run_discover_playlists_async, daemon=True).start()
     messages.info(request, "Découverte de nouvelles playlists lancée en arrière-plan ⏳")
     return redirect("dashboard")
@@ -294,246 +300,108 @@ def discover_status(request):
     return JsonResponse(data)
 
 
-# Mapping colonnes Excel → champs du modèle Appearance
-COLUMN_MAPPING = {
-    'Titre': 'title',
-    'Playlist': 'playlist',
-    'Curateur': 'curator',
-    'Contact': 'contact',
-    'Abonnés': 'followers',
-    'Date d\'ajout': 'added_date',
-    'Etat': 'status',
-    'Description': 'description',
-    'Mise à jour': 'updated_date'
-}
+def spotify_status(request):
+    """
+    Retourne l'état de connexion Spotify pour le front
+    """
+    now = timezone.now()
+    token_obj = SpotifyToken.objects.first()
 
-def clean_date(value):
-    """Nettoyer une date venant de pandas/excel"""
-    if pd.isna(value) or value == "":
-        return None
-    if isinstance(value, pd.Timestamp):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.strptime(value, "%Y-%m-%d").date()
-        except ValueError:
-            return None
-    return None
+    if token_obj:
+        if token_obj.expires_at <= now:
+            return JsonResponse({
+                "connected": False,
+                "message": "⚠️ Votre token Spotify a expiré, reconnectez-vous."
+            })
+        return JsonResponse({"connected": True, "message": "✅ Connecté à Spotify avec token utilisateur."})
 
-def clean_int(value):
-    """Nettoie un entier venant d'Excel, retourne None si vide"""
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    if isinstance(value, (int, float)):
-        return int(value)
-    s = str(value).replace("\u202f", "").replace(" ", "").strip()
-    return int(s) if s.isdigit() else None
+    creds = SpotifyCredentials.objects.first()
+    if creds:
+        return JsonResponse({"connected": True, "message": "✅ Connecté à Spotify avec credentials serveur."})
 
-def clean_preview(value):
-    """Préparer les valeurs pour affichage dans la preview"""
-    if pd.isna(value) or value == "":
-        return ""
-    if isinstance(value, pd.Timestamp):
-        return value.date().isoformat()
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    return str(value)
+    return JsonResponse({
+        "connected": False,
+        "message": "⚠️ Aucun client Spotify valide trouvé. Vérifiez la configuration."
+    })
 
-def import_excel(request):
-    if request.method == "POST":
+
+# ----- Import/Export management -----
+def import_export(request):
+    """
+    Page unique pour Import/Export apparitions + playlists
+    """
+
+    # --- Import apparitions ---
+    if request.method == "POST" and "import_apparitions" in request.POST:
         form = ExcelUploadForm(request.POST, request.FILES)
         if form.is_valid():
             file = form.cleaned_data["file"]
-
-            # Charger workbook avec openpyxl
-            wb = load_workbook(file)
-            ws = wb.active
-
-            # Convertir en DataFrame pandas
-            data = list(ws.values)
-            df = pd.DataFrame(data[1:], columns=data[0])
-
-            # Colonnes obligatoires
-            required_columns = [
-                "Titre", "Playlist", "Curateur", "Contact", "Abonnés",
-                "Date d'ajout", "Etat", "Description", "Mise à jour"
-            ]
-            for col in required_columns:
-                if col not in df.columns:
-                    messages.error(request, f"Colonne manquante : {col}")
-                    return redirect("import_excel")
-
-            # Construire la liste pour preview
-            preview_data = []
-
-            for row_index, row in df.iterrows():
-                # Hyperliens
-                excel_row = row_index + 2  # 1 = header, +1 pour passer en base 1 Excel
-                playlist_cell = ws.cell(row=excel_row, column=list(df.columns).index("Playlist") + 1)
-                curateur_cell = ws.cell(row=excel_row, column=list(df.columns).index("Curateur") + 1)
-                playlist_url = playlist_cell.hyperlink.target if playlist_cell.hyperlink else ""
-                curateur_url = curateur_cell.hyperlink.target if curateur_cell.hyperlink else ""
-
-                preview_data.append({
-                    "Titre": row.get("Titre") or "",
-                    "Playlist": row.get("Playlist") or "",
-                    "PlaylistURL": playlist_url,
-                    "Curateur": row.get("Curateur") or "",
-                    "CurateurURL": curateur_url,
-                    "Contact": row.get("Contact") or "",
-                    "Abonnés": (str(row.get("Abonnés")).replace("\u202f", "").replace(" ", "").strip() if row.get("Abonnés") not in [None, ""] else ""),
-                    "Date d'ajout": clean_preview(row.get("Date d'ajout")),
-                    "Etat": row.get("Etat") or "",
-                    "Description": row.get("Description") or "",
-                    "Mise à jour": clean_preview(row.get("Mise à jour")),
-                })
-
-            # Stocker dans la session
+            preview_data = build_apparitions_preview(file)
+            request.session["import_preview_type"] = "apparitions"
             request.session["import_preview"] = preview_data
+            return render(request, "tracker/import_preview.html", {
+                "preview_data": preview_data,
+                "total": len(preview_data),
+                "type": "apparitions"
+            })
 
-            return render(request, "tracker/import_preview.html", {"preview_data": preview_data, "total": len(preview_data)})
+    # --- Import playlists ---
+    elif request.method == "POST" and "import_playlists" in request.POST:
+        form = ExcelUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            file = form.cleaned_data["file"]
+            preview_data = build_playlists_preview(file)
+            request.session["import_preview_type"] = "playlists"
+            request.session["import_preview"] = preview_data
+            return render(request, "tracker/import_preview.html", {
+                "preview_data": preview_data,
+                "total": len(preview_data),
+                "type": "playlists"
+            })
 
     else:
         form = ExcelUploadForm()
 
-    return render(request, "tracker/import_excel.html", {"form": form})
+    return render(request, "tracker/import_export.html", {"form": form})
+
 
 def confirm_import(request):
+    """
+    Confirme l'import selon la preview stockée en session
+    """
     data = request.session.get("import_preview")
-    if not data:
+    type_ = request.session.get("import_preview_type")
+    if not data or not type_:
         messages.error(request, "Aucune donnée à importer.")
-        return redirect("import_excel")
+        return redirect("import_export")
 
-    mode = request.POST.get("mode", "complete")  # par défaut compléter
-    imported, updated = 0, 0
+    mode = request.POST.get("mode", "complete")
+    if type_ == "apparitions":
+        imported, updated = import_preview_apparitions(data, mode)
+    else:
+        imported, updated = import_preview_playlists(data, mode)
 
-    for row in data:
-        track, _ = Track.objects.get_or_create(
-            name=row.get("Titre") or "Inconnu",
-            defaults={"spotify_id": f"temp_{(row.get('Titre') or 'unk')}"[:64]}
-        )
-
-        playlist, _ = Playlist.objects.get_or_create(
-            name=row.get("Playlist") or "Sans nom",
-            defaults={
-                "spotify_id": f"temp_{(row.get('Playlist') or 'unk')}"[:64],
-                "followers": int(row.get("Abonnés")) if row.get("Abonnés") not in ("", None) else None,
-                "description": row.get("Description") or "",
-                "url": row.get("PlaylistURL") or "",
-                "owner_name": row.get("Curateur") or "",
-                "owner_url": row.get("CurateurURL") or "",
-            }
-        )
-
-        added_on = clean_date(row.get("Date d'ajout"))
-        updated_on = clean_date(row.get("Mise à jour")) or datetime.today().date()
-
-        appearance, created = Appearance.objects.get_or_create(
-            track=track,
-            playlist=playlist,
-            defaults={
-                "contact": row.get("Contact") or "",
-                "state": row.get("Etat") or "",
-                "added_on": added_on,
-                "updated_on": updated_on,
-            }
-        )
-
-        if created:
-            imported += 1
-        else:
-            if mode == "overwrite":
-                appearance.contact = row.get("Contact") or appearance.contact
-                appearance.state = row.get("Etat") or appearance.state
-                appearance.added_on = added_on or appearance.added_on
-                appearance.updated_on = updated_on
-                appearance.save()
-                updated += 1
-            elif mode == "complete":
-                changed = False
-                if not appearance.contact and row.get("Contact"):
-                    appearance.contact = row.get("Contact")
-                    changed = True
-                if not appearance.state and row.get("Etat"):
-                    appearance.state = row.get("Etat")
-                    changed = True
-                if not appearance.added_on and added_on:
-                    appearance.added_on = added_on
-                    changed = True
-                if changed:
-                    appearance.updated_on = updated_on
-                    appearance.save()
-                    updated += 1
-
+    # Nettoyer la session
     del request.session["import_preview"]
+    del request.session["import_preview_type"]
 
-    messages.success(request, f"{imported} apparitions importées, {updated} mises à jour.")
+    messages.success(request, f"{imported} lignes importées, {updated} mises à jour.")
     return redirect("dashboard")
 
+
 def export_excel(request):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Apparitions"
-
-    headers = ["Titre", "Playlist", "Curateur", "Contact", "Abonnés", "Date d'ajout", "Etat", "Description", "Mise à jour"]
-    ws.append(headers)
-
-    for app in Appearance.objects.select_related("track", "playlist"):
-        row = [
-            app.track.name,
-            app.playlist.name,
-            app.playlist.owner_name,
-            app.contact,
-            app.playlist.followers,
-            app.added_on,
-            app.state,
-            app.playlist.description,
-            app.updated_on,
-        ]
-        ws.append(row)
-        r = ws.max_row
-
-        if app.playlist.url:
-            ws.cell(row=r, column=2).hyperlink = app.playlist.url
-        if app.playlist.owner_url:
-            ws.cell(row=r, column=3).hyperlink = app.playlist.owner_url
-
+    wb = export_apparitions_excel()
     response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     response["Content-Disposition"] = 'attachment; filename="export.xlsx"'
     wb.save(response)
     return response
 
+
 def export_pdf(request):
-    response = HttpResponse(content_type="application/pdf")
-    response['Content-Disposition'] = 'attachment; filename="export.pdf"'
-
-    p = canvas.Canvas(response, pagesize=A4)
-    width, height = A4
-
-    y = height - 50
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(50, y, "Export des apparitions")
-    y -= 30
-
-    p.setFont("Helvetica", 10)
-    for app in Appearance.objects.select_related("track", "playlist")[:100]:  # limiter pour test
-        text = f"{app.track.name} - {app.playlist.name} ({app.playlist.followers or 'N/A'} abonnés)"
-        p.drawString(50, y, text)
-        y -= 15
-        if y < 50:  # nouvelle page
-            p.showPage()
-            p.setFont("Helvetica", 10)
-            y = height - 50
-
-    p.showPage()
-    p.save()
-    return response
+    return export_apparitions_pdf()
 
 
+# ----- Login and credentials management -----
 @login_required
 def spotify_login(request):
     creds = get_spotify_credentials()

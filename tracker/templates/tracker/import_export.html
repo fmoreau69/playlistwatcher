@@ -1,0 +1,25 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Import / Export</h2>
+    <div class="row">
+        <!-- Zone Import -->
+        <div class="col-md-6">
+            <h4>Importer un Excel</h4>
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit" name="import_apparitions" class="btn btn-primary mb-2">Importer Apparitions</button>
+                <button type="submit" name="import_playlists" class="btn btn-secondary mb-2">Importer Playlists</button>
+            </form>
+        </div>
+
+        <!-- Zone Export -->
+        <div class="col-md-6">
+            <h4>Exporter</h4>
+            <a href="{% url 'export_excel' %}" class="btn btn-success mb-2">Exporter Excel</a>
+            <a href="{% url 'export_pdf' %}" class="btn btn-info mb-2">Exporter PDF</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

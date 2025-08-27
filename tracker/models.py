@@ -85,9 +85,8 @@ class Playlist(models.Model):
     url = models.URLField(blank=True)
     owner_name = models.CharField(max_length=255, blank=True)
     owner_url = models.URLField(blank=True)
-    followers = models.IntegerField(default=0)
+    followers = models.IntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
-
     discovered_on = models.DateTimeField(blank=True, null=True)
     last_discovered = models.DateTimeField(blank=True, null=True)
     last_scanned = models.DateTimeField(blank=True, null=True)

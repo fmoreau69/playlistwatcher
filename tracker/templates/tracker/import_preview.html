@@ -1,40 +1,40 @@
 {% extends "tracker/base.html" %}
 {% block content %}
-    <h2>Prévisualisation de l'import</h2>
-    <p>Vous allez importer {{ total }} lignes. Voici un aperçu :</p>
+<h2>Prévisualisation de l'import - {{ type|title }}</h2>
+<p>Vous allez importer {{ total }} lignes. Voici un aperçu :</p>
 
-    <table class="table table-striped table-bordered">
-      <tr>
-        {% for col in preview_data.0.keys %}
-          <th>{{ col }}</th>
-        {% endfor %}
-      </tr>
-      {% for row in preview_data %}
-      <tr>
-        {% for val in row.values %}
-          <td>{{ val }}</td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </table>
+<table class="table table-striped table-bordered">
+  <tr>
+    {% for col in preview_data.0.keys %}
+      <th>{{ col }}</th>
+    {% endfor %}
+  </tr>
+  {% for row in preview_data %}
+  <tr>
+    {% for val in row.values %}
+      <td>{{ val }}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
 
-    <form method="post" action="{% url 'confirm_import' %}" id="confirm-form">
-      {% csrf_token %}
-      <input type="hidden" name="mode" id="import-mode" value="">
-      <button type="button" class="btn btn-success" onclick="setMode('overwrite')">Écraser les données</button>
-      <button type="button" class="btn btn-primary" onclick="setMode('complete')">Compléter seulement</button>
-      <a href="{% url 'import_excel' %}" class="btn btn-secondary">Annuler</a>
-    </form>
+<form method="post" action="{% url 'confirm_import' %}" id="confirm-form">
+  {% csrf_token %}
+  <input type="hidden" name="mode" id="import-mode" value="">
+  <button type="button" class="btn btn-success" onclick="setMode('overwrite')">Écraser les données</button>
+  <button type="button" class="btn btn-primary" onclick="setMode('complete')">Compléter seulement</button>
+  <a href="{% url 'import_export' %}" class="btn btn-secondary">Annuler</a>
+</form>
 
-    <script>
-    function setMode(mode) {
-        const msg = mode === "overwrite"
-            ? "⚠️ Voulez-vous vraiment écraser les données existantes ?"
-            : "Compléter les données manquantes uniquement ?";
-        if (confirm(msg)) {
-            document.getElementById("import-mode").value = mode;
-            document.getElementById("confirm-form").submit();
-        }
+<script>
+function setMode(mode) {
+    const msg = mode === "overwrite"
+        ? "⚠️ Voulez-vous vraiment écraser les données existantes ?"
+        : "Compléter les données manquantes uniquement ?";
+    if (confirm(msg)) {
+        document.getElementById("import-mode").value = mode;
+        document.getElementById("confirm-form").submit();
     }
-    </script>
+}
+</script>
 {% endblock %}

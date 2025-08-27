@@ -4,7 +4,7 @@ from django.utils import timezone
 from spotipy.exceptions import SpotifyException
 
 from tracker.models import Track, Playlist, Appearance, TaskStatus, SpotifyToken
-from tracker.spotify import client, search_playlists_for_track
+from tracker.spotify import get_client, search_playlists_for_track
 
 
 class Command(BaseCommand):
@@ -17,7 +17,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("Aucun token Spotify trouvé dans la base !"))
             return
 
-        sp = client()
+        sp = get_client()
 
         # Initialisation du statut de tâche
         task_status, _ = TaskStatus.objects.get_or_create(name="scan_playlists")
