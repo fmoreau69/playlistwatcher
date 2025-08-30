@@ -3,19 +3,29 @@
 <div class="container mt-4">
     <h2>📻 Radios</h2>
 
+    <!-- Section d'actualisation par lot -->
     <div class="container mt-4">
         <h2>Actualisation de la base Radio Browser</h2>
         <p>Nombre de radios actuellement en base : {{ radios_count }}</p>
-        <form method="post">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-primary">Actualiser la base</button>
-        </form>
-        {% for message in messages %}
-        <div class="alert alert-success mt-2">{{ message }}</div>
-        {% endfor %}
+        <button id="refresh-btn" class="btn btn-primary">Actualiser la base</button>
+
+        <!-- Pays courant -->
+        <div id="current-country" class="mt-2 mb-2 font-weight-bold"></div>
+
+        <!-- Barre de progression -->
+        <div class="progress mt-1" style="height: 25px; display: none;">
+            <div id="refresh-progress" class="progress-bar progress-bar-striped progress-bar-animated"
+                 role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                0%
+            </div>
+        </div>
+
+        <!-- Message final -->
+        <div id="refresh-messages" class="mt-2"></div>
     </div>
+
     <!-- Formulaire de recherche multi-sélection avec live search -->
-    <form method="get" class="row g-3 mb-4">
+    <form method="get" class="row g-3 mb-4 mt-4">
         <div class="col-md-4">
             <label for="country" class="form-label">Pays</label>
             <select id="country" name="country" class="selectpicker" multiple data-live-search="true" title="Sélectionner pays">

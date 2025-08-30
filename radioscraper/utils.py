@@ -4,30 +4,34 @@ from django.db import transaction, OperationalError
 from radioscraper.models import Radio
 
 API_URL = "https://de1.api.radio-browser.info/json/stations"
+BATCH_SIZE = 50
 
-def fetch_all_stations(limit=1000):
+def fetch_stations_by_country(country=None, limit=1000, offset=0):
     """
-    Récupère toutes les radios depuis Radio Browser en paginant.
+    Récupère les radios depuis Radio Browser pour un pays précis.
+    Paginer si nécessaire.
     """
+    params = {"limit": limit, "offset": offset}
+    if country:
+        params["country"] = country
+
     all_stations = []
-    offset = 0
-
     while True:
-        response = requests.get(API_URL, params={"limit": limit, "offset": offset}, timeout=30)
+        response = requests.get(API_URL, params=params, timeout=30)
         response.raise_for_status()
         stations = response.json()
         if not stations:
             break
         all_stations.extend(stations)
         offset += limit
-
+        params["offset"] = offset
     return all_stations
 
 def refresh_radios():
     """
     Récupère toutes les radios et met à jour la base locale.
     """
-    stations = fetch_all_stations()
+    stations = fetch_stations_by_country()
     created, updated = 0, 0
 
     for s in stations:
@@ -71,36 +75,33 @@ def safe_update_or_create(defaults, stationuuid, max_retries=5):
     raise OperationalError(f"Impossible d'écrire la station {stationuuid} après {max_retries} tentatives.")
 
 def refresh_radios_progress():
-    """
-    Actualisation avec messages progressifs et protection contre les verrous SQLite.
-    """
-    stations = fetch_all_stations()
+    stations = fetch_stations_by_country()
     total = len(stations)
     created, updated = 0, 0
     messages = []
 
-    with transaction.atomic():  # tout est dans une transaction unique
-        for i, s in enumerate(stations, start=1):
-            defaults = {
-                "name": s.get("name", ""),
-                "country": s.get("country", ""),
-                "state": s.get("state", ""),
-                "tags": s.get("tags", ""),
-                "homepage": s.get("homepage", ""),
-                "emails": s.get("email", ""),
-                "favicon": s.get("favicon", ""),
-                "language": s.get("language", ""),
-                "stream_url": s.get("url", ""),
-            }
-
-            radio, was_created = safe_update_or_create(defaults=defaults, stationuuid=s["stationuuid"])
-
-            if was_created:
-                created += 1
-                messages.append(f"[{i}/{total}] Créée : {radio.name}")
-            else:
-                updated += 1
-                messages.append(f"[{i}/{total}] Mise à jour : {radio.name}")
+    for batch_start in range(0, total, BATCH_SIZE):
+        batch = stations[batch_start:batch_start+BATCH_SIZE]
+        with transaction.atomic():
+            for i, s in enumerate(batch, start=batch_start+1):
+                defaults = {
+                    "name": s.get("name", ""),
+                    "country": s.get("country", ""),
+                    "state": s.get("state", ""),
+                    "tags": s.get("tags", ""),
+                    "homepage": s.get("homepage", ""),
+                    "emails": s.get("email", ""),
+                    "favicon": s.get("favicon", ""),
+                    "language": s.get("language", ""),
+                    "stream_url": s.get("url", ""),
+                }
+                radio, was_created = safe_update_or_create(defaults=defaults, stationuuid=s["stationuuid"])
+                if was_created:
+                    created += 1
+                    messages.append(f"[{i}/{total}] Créée : {radio.name}")
+                else:
+                    updated += 1
+                    messages.append(f"[{i}/{total}] Mise à jour : {radio.name}")
 
     return {
         "total": total,
@@ -108,3 +109,4 @@ def refresh_radios_progress():
         "updated": updated,
         "messages": messages
     }
+
