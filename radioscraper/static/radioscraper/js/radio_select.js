@@ -6,71 +6,92 @@ $(document).ready(function() {
     const $messages = $('#refresh-messages');
     const $currentCountry = $('#current-country');
 
+    // Initialisation de la modal Bootstrap 5
+    const progressModalEl = document.getElementById('progressModal');
+    const progressModal = new bootstrap.Modal(progressModalEl, {
+        backdrop: 'static', // empêche de fermer en cliquant en dehors
+        keyboard: false     // empêche d'utiliser Echap
+    });
+
     if ($btn.length && $progress.length && $messages.length) {
         $btn.on('click', function(e) {
             e.preventDefault();
             $messages.empty();
             $currentCountry.text('');
-            $progress.css('width', '0%').attr('aria-valuenow', 0).show();
+            $progress.css('width', '0%').attr('aria-valuenow', 0);
 
             const selectedCountries = $('#country').val() || [];
-            refreshRadiosBatch(0, selectedCountries, 0);
+
+            // Affiche la popup
+            progressModal.show();
+
+            $btn.prop('disabled', true);
+
+            // Lancer l'actualisation côté serveur
+            $.ajax({
+                url: '/radios/refresh/start/',
+                method: 'POST',
+                data: { countries: selectedCountries },
+                headers: { 'X-CSRFToken': getCookie('csrftoken') },
+                success: function(data) {
+                    if (data.task_id) {
+                        pollProgress(data.task_id);
+                    } else {
+                        $messages.append('<div class="alert alert-danger mt-1">Impossible de démarrer l\'actualisation.</div>');
+                        $btn.prop('disabled', false);
+                        progressModal.hide();
+                    }
+                },
+                error: function() {
+                    $messages.append('<div class="alert alert-danger mt-1">Erreur lors du démarrage de l\'actualisation.</div>');
+                    $btn.prop('disabled', false);
+                    progressModal.hide();
+                }
+            });
         });
     }
 
-    function refreshRadiosBatch(offset, countries, countryIndex) {
-        const BATCH_SIZE = 50;
-        const country = countries[countryIndex] || null;
-
-        $btn.prop('disabled', true);
-
+    function pollProgress(taskId) {
         $.ajax({
-            url: '/radios/refresh/ajax/',
-            method: 'POST',
-            data: {
-                offset: offset,
-                limit: BATCH_SIZE,
-                country: country,
-                country_index: countryIndex
-            },
-            headers: { 'X-CSRFToken': getCookie('csrftoken') },
+            url: '/radios/refresh/progress/',
+            method: 'GET',
+            data: { task_id: taskId },
             success: function(data) {
-                // Afficher le pays courant
+                // Affiche le pays courant
                 if (data.current_country) {
                     $currentCountry.text('Actualisation en cours : ' + data.current_country);
                 }
 
-                // Afficher les messages (optionnel : on peut supprimer si trop verbeux)
+                // Affiche les messages
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(msg => {
                         $messages.append('<div class="alert alert-info mt-1">' + msg + '</div>');
                     });
                 }
 
-                // Mise à jour de la barre de progression globale du batch courant
+                // Met à jour la barre de progression
                 if (data.total) {
                     const percent = Math.min(100, Math.round((data.processed / data.total) * 100));
                     $progress.css('width', percent + '%').attr('aria-valuenow', percent);
                     $progress.text(percent + '%');
                 }
 
-                // Passer au batch suivant ou au pays suivant
-                if (data.remaining > 0) {
-                    refreshRadiosBatch(data.next_offset, countries, countryIndex);
-                } else if (data.next_country_index < countries.length) {
-                    refreshRadiosBatch(0, countries, data.next_country_index);
-                } else {
-                    // Terminé
+                if (data.finished) {
                     $btn.prop('disabled', false);
                     $currentCountry.text('');
                     $messages.append('<div class="alert alert-success mt-2">Actualisation terminée !</div>');
                     $progress.css('width', '100%').attr('aria-valuenow', 100);
                     $progress.text('100%');
+                    setTimeout(() => progressModal.hide(), 1000); // ferme la popup après 1s
+                } else {
+                    // Requête suivante avec un léger délai
+                    setTimeout(() => pollProgress(taskId), 1000);
                 }
             },
             error: function() {
-                $messages.append('<div class="alert alert-danger mt-1">Erreur lors de l\'actualisation</div>');
+                $messages.append('<div class="alert alert-danger mt-1">Erreur lors du suivi de la progression.</div>');
                 $btn.prop('disabled', false);
+                progressModal.hide();
             }
         });
     }

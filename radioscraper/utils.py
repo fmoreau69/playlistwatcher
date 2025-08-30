@@ -30,6 +30,9 @@ def fetch_stations_by_country(country=None, limit=1000, offset=0):
 
 
 def safe_update_or_create(defaults, stationuuid, max_retries=5):
+    """
+    Update or create avec gestion des verrous SQLite et UNIQUE constraint.
+    """
     for attempt in range(max_retries):
         try:
             return Radio.objects.update_or_create(
@@ -59,14 +62,14 @@ def safe_update_or_create(defaults, stationuuid, max_retries=5):
     raise OperationalError(f"Impossible d'écrire la station {stationuuid} après {max_retries} tentatives.")
 
 
-
 def save_stations_batch(stations, batch_size=BATCH_SIZE):
     """
     Sauvegarde les stations par lots pour éviter les verrous SQLite.
-    Affiche une barre de progression console.
+    Affiche une barre de progression console et retourne messages.
     """
     total_created, total_updated = 0, 0
     total = len(stations)
+    messages = []
 
     for offset in range(0, total, batch_size):
         batch = stations[offset:offset+batch_size]
@@ -84,6 +87,9 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE):
                     "stream_url": s.get("url", ""),
                 }
                 radio, created = safe_update_or_create(defaults=defaults, stationuuid=s["stationuuid"])
+                action = "Créée" if created else "Mise à jour"
+                messages.append(f"[{i}/{total}] {action} : {radio.name}")
+
                 if created:
                     total_created += 1
                 else:
@@ -93,8 +99,9 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE):
                 progress = (i / total) * 100
                 print(f"\r[{i}/{total}] {radio.name[:30]:30} - {progress:5.1f}% ", end="", flush=True)
         print()  # nouvelle ligne après batch
+
     print(f"Total créées: {total_created}, mises à jour: {total_updated}")
-    return total_created, total_updated
+    return total_created, total_updated, messages
 
 
 def refresh_radios_progress(country=None):
