@@ -1,4 +1,4 @@
-import time
+import re, requests, time
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
@@ -8,6 +8,8 @@ from django.core.cache import cache
 import pandas as pd
 from tqdm import tqdm
 from io import BytesIO
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 from reportlab.platypus import SimpleDocTemplate, Table
 from .models import Radio
 from .utils import fetch_stations_by_country, BATCH_SIZE
@@ -35,6 +37,7 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
     """
     Sauvegarde les stations par lots pour éviter les verrous SQLite.
     Met à jour la progression en cache si task_id fourni.
+    Ajoute la récupération d'email depuis la homepage/contact si disponible.
     """
     total_created, total_updated = 0, 0
     messages_list = []
@@ -46,13 +49,28 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
 
         for s in tqdm(batch, desc=f"Batch {offset // batch_size + 1}/{total_batches}", unit="station"):
             with transaction.atomic():
+                homepage = s.get("homepage", "")
+                # email fourni par l’API
+                api_email = s.get("email", "")
+                # Vérifie si un email existe déjà dans la DB
+                try:
+                    existing_radio = Radio.objects.get(stationuuid=s["stationuuid"])
+                    if existing_radio.emails:
+                        scraped_email = ""  # pas besoin de scraper
+                    else:
+                        scraped_email = extract_email_from_homepage(homepage)
+                except Radio.DoesNotExist:
+                    scraped_email = extract_email_from_homepage(homepage)
+                # priorité : API + scrape (concaténés si les 2 existent)
+                combined_email = ", ".join(filter(None, {api_email, scraped_email}))
+
                 defaults = {
-                    "name": s.get("name", ""),
+                    "name": s.get("name", "")[:255],  # éviter trop long
                     "country": s.get("country", ""),
                     "state": s.get("state", ""),
                     "tags": s.get("tags", ""),
-                    "homepage": s.get("homepage", ""),
-                    "emails": s.get("email", ""),
+                    "homepage": homepage,
+                    "emails": combined_email,
                     "favicon": s.get("favicon", ""),
                     "language": s.get("language", ""),
                     "stream_url": s.get("url", ""),
@@ -175,6 +193,51 @@ def radio_refresh_progress(request, task_id):
     if not data:
         return JsonResponse({"error": "Task not found"}, status=404)
     return JsonResponse(data)
+
+
+def extract_email_from_homepage(url):
+    if not url:
+        return None
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    emails_found = set()
+
+    def fetch_and_extract(target_url):
+        try:
+            resp = requests.get(target_url, headers=headers, timeout=10)
+            resp.raise_for_status()
+
+            # Extraire avec regex brute
+            emails = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", resp.text)
+            emails_found.update(emails)
+
+            # Extraire les liens mailto
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for a in soup.find_all("a", href=True):
+                if a["href"].startswith("mailto:"):
+                    emails_found.add(a["href"].replace("mailto:", "").strip())
+
+        except Exception as e:
+            print(f"⚠️ Impossible de récupérer {target_url}: {e}")
+
+    # 1) Scraper la page d’accueil
+    fetch_and_extract(url)
+
+    # 2) Chercher un lien "Contact" dans la page
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        for a in soup.find_all("a", href=True):
+            text = a.get_text(strip=True).lower()
+            if "contact" in text:
+                contact_url = urljoin(url, a["href"])
+                fetch_and_extract(contact_url)
+                break
+    except Exception:
+        pass
+
+    return ", ".join(emails_found) if emails_found else None
 
 
 @csrf_exempt

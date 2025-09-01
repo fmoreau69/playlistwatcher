@@ -1,3 +1,6 @@
+celery
+tqdm
+beautifulsoup4
 Django>=5.0
 python-dotenv>=1.0
 spotipy>=2.23

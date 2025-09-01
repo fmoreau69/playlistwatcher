@@ -10,6 +10,20 @@ from tracker.spotify import get_client, search_discover_playlists
 class Command(BaseCommand):
     help = "Découvre de nouvelles playlists Spotify (sans vérifier les morceaux encore)."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--limit",
+            type=int,
+            default=50,
+            help="Nombre maximum de playlists à découvrir (toutes requêtes confondues).",
+        )
+        parser.add_argument(
+            "--per-query",
+            type=int,
+            default=200,
+            help="Nombre maximum de résultats par mot-clé (offset).",
+        )
+
     def handle(self, *args, **opts):
         token_obj = SpotifyToken.objects.first()
         if not token_obj:
@@ -17,12 +31,33 @@ class Command(BaseCommand):
             return
 
         sp = get_client()
+        max_total = opts["limit"]
+        max_per_query = opts["per_query"]
 
-        results = sp.search(q="rock", type="playlist", limit=5)
-        playlists = results["playlists"]["items"]
-        print("Nb playlists:", len(playlists))
-        for pl in playlists:
-            print(pl["name"], pl["id"])
+        self.stdout.write(f"🔍 Découverte de playlists (max_total={max_total}, max_per_query={max_per_query})")
+
+        try:
+            found = 0
+            for pl in search_discover_playlists(sp, max_per_query=max_per_query, max_total=max_total):
+                Playlist.objects.update_or_create(
+                    spotify_id=pl["id"],
+                    defaults={
+                        "name": pl["name"],
+                        "url": pl["url"],
+                        "owner_name": pl["owner_name"],
+                        "owner_url": pl["owner_url"],
+                        "followers": pl["followers"],
+                        "description": pl["description"],
+                        "last_checked": timezone.now(),
+                    },
+                )
+                found += 1
+                self.stdout.write(self.style.SUCCESS(f"🎵 {pl['name']} ({pl['followers']} abonnés)"))
+        except SpotifyException as e:
+            self.stdout.write(self.style.ERROR(f"⚠️ Erreur Spotify: {e}"))
+
+        self.stdout.write(self.style.SUCCESS(f"✅ Découverte terminée : {found} playlists ajoutées/mises à jour."))
+
 
         # # Initialisation du statut de tâche
         # task_status, _ = TaskStatus.objects.get_or_create(name="discover_playlists")

@@ -95,7 +95,7 @@
                     <td>{{ r.name }}</td>
                     <td>{{ r.country }}</td>
                     <td>{{ r.state }}</td>
-                    <td>{{ r.tags }}</td>
+                    <td>{{ r.tags|truncatechars:50 }}</td>
                     <td>
                         {% if r.homepage %}
                         <a href="{{ r.homepage }}" target="_blank">{{ r.homepage }}</a>

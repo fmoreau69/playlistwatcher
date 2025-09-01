@@ -55,3 +55,14 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'tracker' / 'static',
 ]
+
+# # Celery settings pour test sans broker
+# CELERY_TASK_ALWAYS_EAGER = True
+# CELERY_TASK_EAGER_PROPAGATES = True
+#
+# # # Redis comme broker
+# # CELERY_BROKER_URL = "redis://localhost:6379/0"
+# # CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+#
+# # Pour éviter des résultats qui restent trop longtemps
+# CELERY_RESULT_EXPIRES = 3600  # 1h

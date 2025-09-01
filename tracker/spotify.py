@@ -177,38 +177,43 @@ def search_playlists_for_track(sp: spotipy.Spotify, track_id: str, track_name: s
         time.sleep(0.4)  # douceur sur l’API
 
 
-def search_discover_playlists(sp: spotipy.Spotify, max_per_query: int = 200) -> Iterable[Dict]:
+def search_discover_playlists(sp: spotipy.Spotify, max_per_query: int = 200, max_total: int = 50) -> Iterable[Dict]:
     """
     Recherche générique de playlists Spotify pour peupler la base.
-    On ne filtre pas par track : objectif = découvrir des playlists intéressantes.
+    - max_per_query : limite par mot-clé
+    - max_total : limite globale (toutes requêtes confondues)
     """
     keywords = [
         "music", "playlist", "hits", "mix", "best", "favorites", "indie", "rock", "pop", "electro"
     ]
     seen = set()
+    total_found = 0
 
     for q in keywords:
         offset = 0
-        while offset < max_per_query:
+        while offset < max_per_query and total_found < max_total:
             try:
                 results = safe_spotify_call(sp.search, q=q, type="playlist", limit=50, offset=offset)
             except Exception as e:
                 print(f"⚠️ Recherche échouée pour '{q}': {e}")
-                continue
+                break
+
             items = results.get("playlists", {}).get("items", [])
             if not items:
                 break
 
             for pl in items:
-                pl.get("id")
+                if not pl or not pl.get("id"):
+                    continue
                 pid = pl["id"]
                 if pid in seen:
                     continue
                 seen.add(pid)
 
-                # Récupération détaillée de la playlist
+                # Récupération détaillée
                 try:
-                    full = safe_spotify_call(sp.playlist,
+                    full = safe_spotify_call(
+                        sp.playlist,
                         pid,
                         fields="id,name,external_urls.spotify,owner(display_name,external_urls.spotify),followers.total,description",
                     )
@@ -216,6 +221,7 @@ def search_discover_playlists(sp: spotipy.Spotify, max_per_query: int = 200) -> 
                     print(f"⚠️ Impossible de récupérer playlist {pid}: {e}")
                     continue
 
+                total_found += 1
                 yield {
                     "id": full.get("id"),
                     "name": full.get("name"),
@@ -226,7 +232,12 @@ def search_discover_playlists(sp: spotipy.Spotify, max_per_query: int = 200) -> 
                     "description": full.get("description") or "",
                 }
 
+                if total_found >= max_total:
+                    print(f"⏹️ Limite globale atteinte : {max_total} playlists.")
+                    return
+
             offset += 50
             time.sleep(0.4)  # limiter les appels
 
-    print(f"✅ Découverte terminée : {len(seen)} playlists uniques trouvées.")
+    print(f"✅ Découverte terminée : {total_found} playlists uniques trouvées.")
+
