@@ -37,7 +37,10 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
     """
     Sauvegarde les stations par lots pour éviter les verrous SQLite.
     Met à jour la progression en cache si task_id fourni.
+<<<<<<< HEAD
     Ajoute la récupération d'email depuis la homepage/contact si disponible.
+=======
+>>>>>>> 9a1ba78e73fa4cbb4f4b8adc459d5ae41c33baee
     """
     total_created, total_updated = 0, 0
     messages_list = []
@@ -47,7 +50,11 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
         batch = stations[offset:offset + batch_size]
         total_batches = (len(stations) + batch_size - 1) // batch_size
 
+<<<<<<< HEAD
         for s in tqdm(batch, desc=f"Batch {offset // batch_size + 1}/{total_batches}", unit="station"):
+=======
+        for s in tqdm(batch, desc=f"Batch {offset // batch_size + 1}", unit="station"):
+>>>>>>> 9a1ba78e73fa4cbb4f4b8adc459d5ae41c33baee
             with transaction.atomic():
                 homepage = s.get("homepage", "")
                 # email fourni par l’API
@@ -195,6 +202,7 @@ def radio_refresh_progress(request, task_id):
     return JsonResponse(data)
 
 
+<<<<<<< HEAD
 def extract_email_from_homepage(url):
     if not url:
         return None
@@ -240,6 +248,8 @@ def extract_email_from_homepage(url):
     return ", ".join(emails_found) if emails_found else None
 
 
+=======
+>>>>>>> 9a1ba78e73fa4cbb4f4b8adc459d5ae41c33baee
 @csrf_exempt
 def radio_refresh_ajax(request):
     """
