@@ -7,7 +7,7 @@ from cryptography.fernet import Fernet
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth, SpotifyClientCredentials
-from tracker.models import SpotifyToken, SpotifyCredentials
+from tracker.models import SpotifyToken, SpotifyCredentials, Playlist, PlaylistItemsCache
 
 load_dotenv()
 
@@ -116,20 +116,90 @@ def safe_spotify_call(func, *args, **kwargs):
             else:
                 raise
 
-def playlist_contains_track(sp: spotipy.Spotify, playlist_id: str, track_id: str) -> bool:
+def _get_playlist_snapshot_id(sp: spotipy.Spotify, playlist_id: str) -> str | None:
+    try:
+        data = safe_spotify_call(sp.playlist, playlist_id, fields="id,snapshot_id")
+    except Exception:
+        return None
+    return data.get("snapshot_id") if data else None
+
+
+def _fetch_playlist_track_ids(sp: spotipy.Spotify, playlist_id: str) -> set[str]:
+    """
+    Récupère tous les track IDs d'une playlist via l'API Spotify.
+    """
+    track_ids: set[str] = set()
     offset = 0
+    limit = 100
     while True:
-        items = safe_spotify_call(sp.playlist_items, playlist_id, fields="items.track.id,total,next", offset=offset, additional_types=["track"])
-        if not items or not items.get("items"):
-            return False
-        for it in items["items"]:
-            t = it.get("track") or {}
-            if t and t.get("id") == track_id:
-                return True
+        items = safe_spotify_call(
+            sp.playlist_items,
+            playlist_id,
+            fields="items.track.id,next",
+            offset=offset,
+            limit=limit,
+            additional_types=["track"],
+        )
+        if not items:
+            break
+        for it in (items.get("items") or []):
+            t = (it or {}).get("track") or {}
+            tid = t.get("id")
+            if tid:
+                track_ids.add(tid)
         if items.get("next"):
-            offset += 100
+            offset += limit
         else:
-            return False
+            break
+    return track_ids
+
+
+def playlist_contains_track(sp: spotipy.Spotify, playlist_id: str, track_id: str) -> bool:
+    """
+    Version optimisée avec cache basé sur snapshot_id.
+    - Essaie d'utiliser un cache d'items si snapshot inchangé
+    - Sinon, reconstruit le cache puis vérifie
+    """
+    playlist_obj: Playlist | None = Playlist.objects.filter(spotify_id=playlist_id).first()
+
+    # Si on a déjà un snapshot en base et un cache correspondant, vérifie immédiatement
+    if playlist_obj and playlist_obj.snapshot_id:
+        cache = PlaylistItemsCache.objects.filter(
+            playlist=playlist_obj, snapshot_id=playlist_obj.snapshot_id
+        ).first()
+        if cache and cache.track_ids:
+            return track_id in set(cache.track_ids)
+
+    # Récupère le snapshot actuel (1 seul appel)
+    current_snapshot = _get_playlist_snapshot_id(sp, playlist_id)
+
+    # Si playlist existe, compare et tente d'utiliser le cache
+    cache: PlaylistItemsCache | None = None
+    if playlist_obj and current_snapshot:
+        if playlist_obj.snapshot_id == current_snapshot:
+            cache = PlaylistItemsCache.objects.filter(
+                playlist=playlist_obj, snapshot_id=current_snapshot
+            ).first()
+            if cache and cache.track_ids:
+                return track_id in set(cache.track_ids)
+
+    # Pas de cache exploitable → fetch complet et (si possible) persister
+    track_ids = _fetch_playlist_track_ids(sp, playlist_id)
+
+    # Persistance du cache si on a un objet Playlist
+    if playlist_obj and current_snapshot:
+        # met à jour snapshot si changé
+        if playlist_obj.snapshot_id != current_snapshot:
+            playlist_obj.snapshot_id = current_snapshot
+            playlist_obj.save(update_fields=["snapshot_id"])
+        # enregistre le cache pour ce snapshot
+        PlaylistItemsCache.objects.update_or_create(
+            playlist=playlist_obj,
+            snapshot_id=current_snapshot,
+            defaults={"track_ids": list(track_ids)},
+        )
+
+    return track_id in track_ids
 
 def search_playlists_for_track(sp: spotipy.Spotify, track_id: str, track_name: str, artist_hint: str = "Donkey Shots") -> Iterable[Dict]:
     """
@@ -158,9 +228,10 @@ def search_playlists_for_track(sp: spotipy.Spotify, track_id: str, track_name: s
             # Vérif contenu
             if safe_spotify_call(playlist_contains_track, sp, pid, track_id):
                 try:
-                    full = safe_spotify_call(sp.playlist,
+                    full = safe_spotify_call(
+                        sp.playlist,
                         pid,
-                        fields="id,name,external_urls.spotify,owner(display_name,external_urls.spotify),followers.total,description",
+                        fields="id,name,snapshot_id,external_urls.spotify,owner(display_name,external_urls.spotify),followers.total,description",
                     )
                 except Exception as e:
                     print(f"⚠️ Impossible de récupérer playlist {pid}: {e}")
@@ -173,6 +244,7 @@ def search_playlists_for_track(sp: spotipy.Spotify, track_id: str, track_name: s
                     "owner_url": ((full.get("owner") or {}).get("external_urls") or {}).get("spotify", ""),
                     "followers": (full.get("followers") or {}).get("total", 0),
                     "description": full.get("description") or "",
+                    "snapshot_id": full.get("snapshot_id"),
                 }
         time.sleep(0.4)  # douceur sur l’API
 
@@ -210,26 +282,20 @@ def search_discover_playlists(sp: spotipy.Spotify, max_per_query: int = 200, max
                     continue
                 seen.add(pid)
 
-                # Récupération détaillée
-                try:
-                    full = safe_spotify_call(
-                        sp.playlist,
-                        pid,
-                        fields="id,name,external_urls.spotify,owner(display_name,external_urls.spotify),followers.total,description",
-                    )
-                except Exception as e:
-                    print(f"⚠️ Impossible de récupérer playlist {pid}: {e}")
-                    continue
+                # Utilise directement le document 'search' (évite 1 appel par playlist)
+                owner = (pl.get("owner") or {})
+                external_urls = (pl.get("external_urls") or {})
 
                 total_found += 1
                 yield {
-                    "id": full.get("id"),
-                    "name": full.get("name"),
-                    "url": (full.get("external_urls") or {}).get("spotify", ""),
-                    "owner_name": (full.get("owner") or {}).get("display_name") or "",
-                    "owner_url": ((full.get("owner") or {}).get("external_urls") or {}).get("spotify", ""),
-                    "followers": (full.get("followers") or {}).get("total", 0),
-                    "description": full.get("description") or "",
+                    "id": pl.get("id"),
+                    "name": pl.get("name"),
+                    "url": external_urls.get("spotify", ""),
+                    "owner_name": owner.get("display_name") or "",
+                    "owner_url": (owner.get("external_urls") or {}).get("spotify", ""),
+                    "followers": None,  # non dispo dans la réponse search
+                    "description": pl.get("description") or "",
+                    "snapshot_id": pl.get("snapshot_id"),
                 }
 
                 if total_found >= max_total:

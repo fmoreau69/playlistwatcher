@@ -39,7 +39,7 @@ class Command(BaseCommand):
         try:
             found = 0
             for pl in search_discover_playlists(sp, max_per_query=max_per_query, max_total=max_total):
-                Playlist.objects.update_or_create(
+                obj, created = Playlist.objects.update_or_create(
                     spotify_id=pl["id"],
                     defaults={
                         "name": pl["name"],
@@ -48,11 +48,18 @@ class Command(BaseCommand):
                         "owner_url": pl["owner_url"],
                         "followers": pl["followers"],
                         "description": pl["description"],
-                        "last_checked": timezone.now(),
+                        "snapshot_id": pl.get("snapshot_id"),
+                        "last_discovered": timezone.now(),
                     },
                 )
+
+                if created and not obj.discovered_on:
+                    obj.discovered_on = obj.last_discovered
+                    obj.save(update_fields=["discovered_on"])
+
                 found += 1
-                self.stdout.write(self.style.SUCCESS(f"🎵 {pl['name']} ({pl['followers']} abonnés)"))
+                followers = obj.followers if obj.followers is not None else "?"
+                self.stdout.write(self.style.SUCCESS(f"🎵 {obj.name} ({followers} abonnés)"))
         except SpotifyException as e:
             self.stdout.write(self.style.ERROR(f"⚠️ Erreur Spotify: {e}"))
 

@@ -63,6 +63,7 @@ class Command(BaseCommand):
                             owner_url=pl["owner_url"],
                             followers=pl["followers"],
                             description=pl["description"],
+                            snapshot_id=pl.get("snapshot_id"),
                             last_scanned=timezone.now()
                         )
                     )
