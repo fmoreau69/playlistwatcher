@@ -33,7 +33,7 @@ def safe_update_or_create(defaults, stationuuid, max_retries=5):
     raise OperationalError(f"Impossible d'écrire la station {stationuuid} après {max_retries} tentatives.")
 
 
-def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
+def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None, force=False):
     """
     Ajoute la récupération d'email depuis la homepage/contact si disponible.
     Sauvegarde les stations par lots pour éviter les verrous SQLite.
@@ -50,22 +50,21 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
         for s in tqdm(batch, desc=f"Batch {offset // batch_size + 1}/{total_batches}", unit="station"):
             with transaction.atomic():
                 homepage = s.get("homepage", "")
-                # email fourni par l’API
                 api_email = s.get("email", "")
-                # Vérifie si un email existe déjà dans la DB
+
                 try:
                     existing_radio = Radio.objects.get(stationuuid=s["stationuuid"])
-                    if existing_radio.emails:
-                        scraped_email = ""  # pas besoin de scraper
+                    if existing_radio.emails and not force:
+                        scraped_email = ""  # on garde l'existant
                     else:
                         scraped_email = extract_email_from_homepage(homepage)
                 except Radio.DoesNotExist:
                     scraped_email = extract_email_from_homepage(homepage)
-                # priorité : API + scrape (concaténés si les 2 existent)
+
                 combined_email = ", ".join(filter(None, {api_email, scraped_email}))
 
                 defaults = {
-                    "name": s.get("name", "")[:255],  # éviter trop long
+                    "name": s.get("name", "")[:255],
                     "country": s.get("country", ""),
                     "state": s.get("state", ""),
                     "tags": s.get("tags", ""),
@@ -84,7 +83,6 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
                 else:
                     total_updated += 1
 
-        # Mise à jour de la progression dans le cache
         if task_id:
             cache.set(
                 f"refresh_progress_{task_id}",
@@ -93,7 +91,7 @@ def save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=None):
                     "total": total,
                     "created": total_created,
                     "updated": total_updated,
-                    "messages": messages_list[-5:],  # dernières actions
+                    "messages": messages_list[-5:],
                 },
                 timeout=3600
             )
@@ -168,6 +166,7 @@ def radio_refresh_start(request):
     Lance l’actualisation et enregistre l’état dans le cache.
     """
     selected_countries = request.POST.getlist("country") or [None]
+    force = request.POST.get("force") == "on"
     task_id = str(int(time.time()))
 
     # Init du cache
@@ -180,7 +179,7 @@ def radio_refresh_start(request):
     # Exécution synchrone (pour async il faudrait Celery/RQ)
     for country in selected_countries:
         stations = fetch_stations_by_country(country=country)
-        save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=task_id)
+        save_stations_batch(stations, batch_size=BATCH_SIZE, task_id=task_id, force=force)
 
     return JsonResponse({"task_id": task_id})
 
@@ -242,15 +241,13 @@ def extract_email_from_homepage(url):
 
 @csrf_exempt
 def radio_refresh_ajax(request):
-    """
-    ⚡ Alternative par batch incrémental (au lieu du cache/polling).
-    """
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request"}, status=400)
 
     selected_countries = request.POST.getlist("country") or [None]
     country_index = int(request.POST.get("country_index", 0))
     offset = int(request.POST.get("offset", 0))
+    force = request.POST.get("force") == "on"
 
     if country_index >= len(selected_countries):
         return JsonResponse({"finished": True})
@@ -260,7 +257,9 @@ def radio_refresh_ajax(request):
     total = len(stations)
     batch_stations = stations[offset:offset+BATCH_SIZE]
 
-    created, updated, messages_list = save_stations_batch(batch_stations, batch_size=BATCH_SIZE)
+    created, updated, messages_list = save_stations_batch(
+        batch_stations, batch_size=BATCH_SIZE, force=force
+    )
     remaining = total - (offset + len(batch_stations))
 
     next_offset = offset + BATCH_SIZE if remaining > 0 else 0

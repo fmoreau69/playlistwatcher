@@ -9,8 +9,8 @@ $(document).ready(function() {
     // Initialisation de la modal Bootstrap 5
     const progressModalEl = document.getElementById('progressModal');
     const progressModal = new bootstrap.Modal(progressModalEl, {
-        backdrop: 'static', // empêche de fermer en cliquant en dehors
-        keyboard: false     // empêche d'utiliser Echap
+        backdrop: 'static',
+        keyboard: false
     });
 
     if ($btn.length && $progress.length && $messages.length) {
@@ -21,6 +21,7 @@ $(document).ready(function() {
             $progress.css('width', '0%').attr('aria-valuenow', 0);
 
             const selectedCountries = $('#country').val() || [];
+            const forceUpdate = $('#force-checkbox').is(':checked') ? 'on' : '';  // 👈 ajout
 
             // Affiche la popup
             progressModal.show();
@@ -31,7 +32,10 @@ $(document).ready(function() {
             $.ajax({
                 url: '/radios/refresh/start/',
                 method: 'POST',
-                data: { countries: selectedCountries },
+                data: {
+                    countries: selectedCountries,
+                    force: forceUpdate   // 👈 envoi du paramètre "force"
+                },
                 headers: { 'X-CSRFToken': getCookie('csrftoken') },
                 success: function(data) {
                     if (data.task_id) {
@@ -57,19 +61,16 @@ $(document).ready(function() {
             method: 'GET',
             data: { task_id: taskId },
             success: function(data) {
-                // Affiche le pays courant
                 if (data.current_country) {
                     $currentCountry.text('Actualisation en cours : ' + data.current_country);
                 }
 
-                // Affiche les messages
                 if (data.messages && data.messages.length > 0) {
                     data.messages.forEach(msg => {
                         $messages.append('<div class="alert alert-info mt-1">' + msg + '</div>');
                     });
                 }
 
-                // Met à jour la barre de progression
                 if (data.total) {
                     const percent = Math.min(100, Math.round((data.processed / data.total) * 100));
                     $progress.css('width', percent + '%').attr('aria-valuenow', percent);
@@ -82,9 +83,8 @@ $(document).ready(function() {
                     $messages.append('<div class="alert alert-success mt-2">Actualisation terminée !</div>');
                     $progress.css('width', '100%').attr('aria-valuenow', 100);
                     $progress.text('100%');
-                    setTimeout(() => progressModal.hide(), 1000); // ferme la popup après 1s
+                    setTimeout(() => progressModal.hide(), 1000);
                 } else {
-                    // Requête suivante avec un léger délai
                     setTimeout(() => pollProgress(taskId), 1000);
                 }
             },
