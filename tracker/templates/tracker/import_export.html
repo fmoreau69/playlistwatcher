@@ -3,9 +3,9 @@
 <div class="container mt-4">
     <h2>Import / Export</h2>
     <div class="row">
-        <!-- Zone Import -->
+        <!-- Import à gauche -->
         <div class="col-md-6">
-            <h4>Importer un Excel</h4>
+            <h4>Import</h4>
             <form method="post" enctype="multipart/form-data">
                 {% csrf_token %}
                 {{ form.as_p }}
@@ -14,11 +14,13 @@
             </form>
         </div>
 
-        <!-- Zone Export -->
+        <!-- Export à droite -->
         <div class="col-md-6">
-            <h4>Exporter</h4>
-            <a href="{% url 'export_excel' %}" class="btn btn-success mb-2">Exporter Excel</a>
-            <a href="{% url 'export_pdf' %}" class="btn btn-info mb-2">Exporter PDF</a>
+            <h4>Export</h4>
+            <div class="d-flex gap-2 flex-wrap">
+                <a href="{% url 'export_excel' %}" class="btn btn-outline-primary">Export XLSX</a>
+                <a href="{% url 'export_pdf' %}" class="btn btn-outline-success">Export PDF</a>
+            </div>
         </div>
     </div>
 </div>

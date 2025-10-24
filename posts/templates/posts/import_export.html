@@ -4,15 +4,7 @@
   <h2>Import / Export</h2>
 
   <div class="row">
-    <div class="col-md-6">
-      <div class="card mb-3">
-        <div class="card-header">Export</div>
-        <div class="card-body">
-          <a href="{% url 'posts:export_posts' %}" class="btn btn-outline-primary me-2">Export Posts JSON</a>
-          <a href="{% url 'posts:export_credentials' %}" class="btn btn-outline-secondary">Export Credentials JSON</a>
-        </div>
-      </div>
-    </div>
+    <!-- Import à gauche -->
     <div class="col-md-6">
       <div class="card mb-3">
         <div class="card-header">Import</div>
@@ -27,6 +19,16 @@
             {{ creds_import_form.as_p }}
             <button class="btn btn-secondary" type="submit" formaction="#" disabled>Import Credentials (à venir)</button>
           </form>
+        </div>
+      </div>
+    </div>
+    <!-- Export à droite -->
+    <div class="col-md-6">
+      <div class="card mb-3">
+        <div class="card-header">Export</div>
+        <div class="card-body">
+          <a href="{% url 'posts:export_posts' %}" class="btn btn-outline-primary me-2">Export Posts JSON</a>
+          <a href="{% url 'posts:export_credentials' %}" class="btn btn-outline-secondary">Export Credentials JSON</a>
         </div>
       </div>
     </div>

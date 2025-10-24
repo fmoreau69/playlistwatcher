@@ -7,10 +7,11 @@ from django.core.paginator import Paginator
 from django.core.cache import cache
 import pandas as pd
 from tqdm import tqdm
-from io import BytesIO
+from io import BytesIO, StringIO
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from reportlab.platypus import SimpleDocTemplate, Table
+from .forms import RadiosUploadForm
 from .models import Radio
 from .utils import fetch_stations_by_country, BATCH_SIZE
 
@@ -278,7 +279,7 @@ def radio_refresh_ajax(request):
     })
 
 
-def export_xlsx(request):
+def export_radios_xlsx(request):
     radios = Radio.objects.all().values()
     df = pd.DataFrame(radios)
     buffer = BytesIO()
@@ -289,7 +290,7 @@ def export_xlsx(request):
     return response
 
 
-def export_pdf(request):
+def export_radios_pdf(request):
     radios = Radio.objects.all().values_list("name", "country", "state", "tags", "homepage", "emails")
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer)
@@ -299,3 +300,62 @@ def export_pdf(request):
     response = HttpResponse(buffer, content_type="application/pdf")
     response["Content-Disposition"] = "attachment; filename=radios.pdf"
     return response
+
+
+def export_radios_csv(request):
+    radios = Radio.objects.all().values(
+        "stationuuid", "name", "country", "state", "tags", "homepage", "stream_url",
+        "emails", "favicon", "language", "station_type", "show_name", "contact_name",
+        "contact_email", "contact_phone", "account_owner", "last_contact_date", "comment",
+    )
+    df = pd.DataFrame(radios)
+    buffer = StringIO()
+    df.to_csv(buffer, index=False)
+    response = HttpResponse(buffer.getvalue(), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = "attachment; filename=radios.csv"
+    return response
+
+
+def radios_import_export(request):
+    if request.method == "POST":
+        form = RadiosUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            f = form.cleaned_data["file"]
+            ext = (f.name.split(".")[-1] or "").lower()
+            if ext in ("xlsx", "xls"):
+                df = pd.read_excel(f)
+            elif ext == "csv":
+                df = pd.read_csv(f)
+            else:
+                return JsonResponse({"error": "Unsupported file format"}, status=400)
+
+            for _, row in df.iterrows():
+                defaults = {
+                    "name": str(row.get("name", ""))[:255],
+                    "country": row.get("country") or "",
+                    "state": row.get("state") or "",
+                    "tags": row.get("tags") or "",
+                    "homepage": row.get("homepage") or "",
+                    "stream_url": row.get("stream_url") or "",
+                    "emails": row.get("emails") or "",
+                    "favicon": row.get("favicon") or "",
+                    "language": row.get("language") or "",
+                    "station_type": row.get("station_type") or "",
+                    "show_name": row.get("show_name") or "",
+                    "contact_name": row.get("contact_name") or "",
+                    "contact_email": row.get("contact_email") or "",
+                    "contact_phone": row.get("contact_phone") or "",
+                    "account_owner": row.get("account_owner") or "",
+                    "last_contact_date": row.get("last_contact_date") or None,
+                    "comment": row.get("comment") or "",
+                }
+                stationuuid = str(row.get("stationuuid") or "").strip()
+                if not stationuuid:
+                    continue
+                Radio.objects.update_or_create(stationuuid=stationuuid, defaults=defaults)
+
+            return render(request, "radioscraper/radios_import_export.html", {"form": RadiosUploadForm(), "import_done": True})
+    else:
+        form = RadiosUploadForm()
+
+    return render(request, "radioscraper/radios_import_export.html", {"form": form})
