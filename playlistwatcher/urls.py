@@ -10,6 +10,7 @@ urlpatterns = [
     path("", include("tracker.urls")),
     path("radios/", include("radioscraper.urls")),
     path("posts/", include("posts.urls")),
+    path("emails/", include("emails.urls")),
     path(r'favicon.ico', RedirectView.as_view(url=staticfiles_storage.url('favicon.ico'))),
 ]
 if settings.DEBUG:

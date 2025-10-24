@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "radioscraper",
     "tracker",
     "posts",
+    "emails",
     "sslserver",
     "django_extensions",
 ]

@@ -82,7 +82,21 @@
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="{% url 'posts:publish' %}"><i class="bi bi-send"></i> Publish a Post</a></li>
                         <li><a class="dropdown-item" href="{% url 'posts:credentials' %}"><i class="bi bi-key"></i> Credentials</a></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{% url 'posts:import_export' %}"><i class="bi bi-arrow-repeat"></i> Import / Export</a></li>
+                    </ul>
+                </li>
+
+                <!-- Dropdown Emails -->
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" id="emailsDropdown" role="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-envelope"></i> Emails
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{% url 'emails:send' %}"><i class="bi bi-send"></i> Send an email</a></li>
+                        <li><a class="dropdown-item" href="{% url 'emails:contacts' %}"><i class="bi bi-people"></i> Contacts</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'emails:import_export' %}"><i class="bi bi-arrow-repeat"></i> Import / Export</a></li>
                     </ul>
                 </li>
 

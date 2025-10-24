@@ -1,0 +1,30 @@
+{% extends 'tracker/base.html' %}
+{% block content %}
+<div class="container">
+  <h2>Import / Export</h2>
+  <div class="row">
+    <div class="col-md-6">
+      <div class="card mb-3">
+        <div class="card-header">Export</div>
+        <div class="card-body">
+          <a href="#" class="btn btn-outline-primary disabled">Export CSV</a>
+          <a href="#" class="btn btn-outline-secondary disabled">Export XLSX</a>
+          <a href="#" class="btn btn-outline-success disabled">Export PDF</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card mb-3">
+        <div class="card-header">Import</div>
+        <div class="card-body">
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="file" class="form-control mb-2" />
+            <button class="btn btn-primary disabled" type="submit">Import</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
