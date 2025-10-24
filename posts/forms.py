@@ -7,6 +7,10 @@ from django.utils import timezone
 from .models import Post, MediaAsset, SocialCredential, SocialNetworks
 
 
+class MultiFileInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
 class PublishPostForm(forms.ModelForm):
     networks = forms.MultipleChoiceField(
         choices=SocialNetworks.CHOICES,
@@ -21,7 +25,7 @@ class PublishPostForm(forms.ModelForm):
     )
     media_files = forms.FileField(
         required=False,
-        widget=forms.ClearableFileInput(attrs={"multiple": True}),
+        widget=MultiFileInput(attrs={"multiple": True}),
         label="Images/Vidéo",
     )
 
@@ -29,6 +33,10 @@ class PublishPostForm(forms.ModelForm):
         model = Post
         fields = ["title", "text"]
         labels = {"title": "Post Title", "text": "Post Text"}
+        widgets = {
+            "title": forms.TextInput(attrs={"class": "form-control"}),
+            "text": forms.Textarea(attrs={"class": "form-control", "rows": 5}),
+        }
 
     def clean_networks(self):
         selected = set(self.cleaned_data.get("networks") or [])

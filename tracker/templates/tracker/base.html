@@ -80,7 +80,9 @@
                         <i class="bi bi-broadcast-pin"></i> Posts
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item disabled" href="#"><i class="bi bi-hourglass-split"></i> À venir...</a></li>
+                        <li><a class="dropdown-item" href="{% url 'posts:publish' %}"><i class="bi bi-send"></i> Publish a Post</a></li>
+                        <li><a class="dropdown-item" href="{% url 'posts:credentials' %}"><i class="bi bi-key"></i> Credentials</a></li>
+                        <li><a class="dropdown-item" href="{% url 'posts:import_export' %}"><i class="bi bi-arrow-repeat"></i> Import / Export</a></li>
                     </ul>
                 </li>
 
