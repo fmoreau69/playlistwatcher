@@ -3,22 +3,35 @@
 <div class="container mt-4">
     <h2>Import / Export</h2>
     <div class="row">
-        <!-- Zone Import -->
+        <!-- Import à gauche -->
         <div class="col-md-6">
-            <h4>Importer un Excel</h4>
-            <form method="post" enctype="multipart/form-data">
-                {% csrf_token %}
-                {{ form.as_p }}
-                <button type="submit" name="import_apparitions" class="btn btn-primary mb-2">Importer Apparitions</button>
-                <button type="submit" name="import_playlists" class="btn btn-secondary mb-2">Importer Playlists</button>
-            </form>
+            <div class="card mb-3">
+                <div class="card-header">Import</div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        {{ form.as_p }}
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="submit" name="import_apparitions" class="btn btn-primary">Importer Apparitions</button>
+                            <button type="submit" name="import_playlists" class="btn btn-secondary">Importer Playlists</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
 
-        <!-- Zone Export -->
+        <!-- Export à droite -->
         <div class="col-md-6">
-            <h4>Exporter</h4>
-            <a href="{% url 'export_excel' %}" class="btn btn-success mb-2">Exporter Excel</a>
-            <a href="{% url 'export_pdf' %}" class="btn btn-info mb-2">Exporter PDF</a>
+            <div class="card mb-3">
+                <div class="card-header">Export</div>
+                <div class="card-body">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="{% url 'export_csv' %}" class="btn btn-outline-secondary">Export CSV</a>
+                        <a href="{% url 'export_excel' %}" class="btn btn-outline-primary">Export XLSX</a>
+                        <a href="{% url 'export_pdf' %}" class="btn btn-outline-success">Export PDF</a>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

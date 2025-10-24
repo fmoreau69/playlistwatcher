@@ -20,6 +20,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "radioscraper",
     "tracker",
+    "posts",
+    "emails",
     "sslserver",
     "django_extensions",
 ]
@@ -55,6 +57,10 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'tracker' / 'static',
 ]
+
+# Media (uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # # Celery settings pour test sans broker
 # CELERY_TASK_ALWAYS_EAGER = True

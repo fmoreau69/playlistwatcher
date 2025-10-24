@@ -87,6 +87,7 @@ class Playlist(models.Model):
     owner_url = models.URLField(blank=True)
     followers = models.IntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
+    snapshot_id = models.CharField(max_length=128, blank=True, null=True)
     discovered_on = models.DateTimeField(blank=True, null=True)
     last_discovered = models.DateTimeField(blank=True, null=True)
     last_scanned = models.DateTimeField(blank=True, null=True)
@@ -117,3 +118,20 @@ class TaskStatus(models.Model):
 
     def __str__(self):
         return f"{self.name}: {self.status}"
+
+
+class PlaylistItemsCache(models.Model):
+    """
+    Cache persistant des identifiants de morceaux d'une playlist pour un snapshot donné.
+    Permet d'éviter de relire tous les items quand le snapshot n'a pas changé.
+    """
+    playlist = models.ForeignKey(Playlist, on_delete=models.CASCADE, related_name="items_caches")
+    snapshot_id = models.CharField(max_length=128)
+    track_ids = models.JSONField(default=list)  # liste de str (track IDs)
+    updated_on = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("playlist", "snapshot_id")
+
+    def __str__(self):
+        return f"Cache {self.playlist_id}@{self.snapshot_id}"

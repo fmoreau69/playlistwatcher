@@ -1,0 +1,91 @@
+{% extends 'tracker/base.html' %}
+{% load posts_extras %}
+{% load static %}
+{% block content %}
+<div class="container">
+  <h2>Publish a Post</h2>
+
+  <form method="post" enctype="multipart/form-data" class="mb-4">
+    {% csrf_token %}
+
+    <div class="mb-3">
+      <label class="form-label">Réseaux sociaux</label>
+      <div class="row">
+        {% for value, label in form.fields.networks.choices %}
+          <div class="col-6 col-sm-4 col-md-3 mb-1">
+            <label class="form-check-label">
+              <input class="form-check-input" type="checkbox" name="networks" value="{{ value }}"
+                {% if value in selected_networks %}checked{% endif %}
+                {% if value not in supported_networks %}disabled{% endif %}>
+              {{ label }}{% if value not in supported_networks %} <small class="text-muted">(bientôt)</small>{% endif %}
+            </label>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-6">
+        <div class="mb-3">
+          <label for="id_title" class="form-label">Post Title</label>
+          {{ form.title }}
+        </div>
+        <div class="mb-3">
+          <label for="id_text" class="form-label">Post Text</label>
+          {{ form.text }}
+        </div>
+        <div class="mb-3">
+          <label for="id_media_files" class="form-label">Add Images or a Video</label>
+          {{ form.media_files }}
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="mb-3">
+          <label for="id_scheduled_at" class="form-label">Date/heure de publication</label>
+          {{ form.scheduled_at }}
+        </div>
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary" onclick="document.getElementById('id_action').value='publish_now'">Publish now</button>
+          <button type="submit" class="btn btn-outline-primary" onclick="document.getElementById('id_action').value='queue'">Add to queue</button>
+        </div>
+      </div>
+    </div>
+
+    {{ form.action }}
+  </form>
+
+  <h3>Queue & History</h3>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Scheduled</th>
+          <th>Targets</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in posts %}
+          <tr style="background-color: {{ p|row_color }};">
+            <td>{{ p.title }}</td>
+            <td>{{ p.get_status_display }}</td>
+            <td>{% if p.scheduled_at %}{{ p.scheduled_at|date:'Y-m-d H:i' }}{% else %}-{% endif %}</td>
+            <td>
+              {% for t in p.targets.all %}
+                <span class="badge bg-secondary">{{ t.get_network_display }}: {{ t.get_status_display }}</span>
+              {% empty %}
+                —
+              {% endfor %}
+            </td>
+            <td>{{ p.created_on|date:'Y-m-d H:i' }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">No posts yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends 'tracker/base.html' %}
+{% block content %}
+<div class="container">
+  <h2>Send an email</h2>
+
+  <form method="post" enctype="multipart/form-data" class="mb-4">
+    {% csrf_token %}
+    <div class="row">
+      <div class="col-md-6">
+        <div class="mb-3">{{ form.credential.label_tag }} {{ form.credential }}</div>
+        <div class="mb-3">{{ form.to.label_tag }} {{ form.to }}</div>
+        <div class="mb-3">{{ form.cc.label_tag }} {{ form.cc }}</div>
+        <div class="mb-3">{{ form.bcc.label_tag }} {{ form.bcc }}</div>
+        <div class="mb-3">{{ form.subject.label_tag }} {{ form.subject }}</div>
+      </div>
+      <div class="col-md-6">
+        <div class="mb-3">{{ form.scheduled_at.label_tag }} {{ form.scheduled_at }}</div>
+        <div class="mb-3">{{ form.attachments.label_tag }} {{ form.attachments }}</div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" onclick="document.getElementById('id_action').value='send_now'">Send now</button>
+          <button class="btn btn-outline-primary" onclick="document.getElementById('id_action').value='queue'">Add to queue</button>
+        </div>
+      </div>
+    </div>
+    <div class="mb-3">{{ form.body_text.label_tag }} {{ form.body_text }}</div>
+    <div class="mb-3">{{ form.body_html.label_tag }} {{ form.body_html }}</div>
+    {{ form.action }}
+  </form>
+
+  <h3>Queue & History</h3>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead>
+        <tr><th>Subject</th><th>Status</th><th>Scheduled</th><th>Targets</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {% for e in emails %}
+          <tr>
+            <td>{{ e.subject }}</td>
+            <td>{{ e.get_status_display }}</td>
+            <td>{% if e.scheduled_at %}{{ e.scheduled_at|date:'Y-m-d H:i' }}{% else %}-{% endif %}</td>
+            <td>
+              {% for t in e.targets.all %}
+                <span class="badge bg-secondary">{{ t.contact.email }} ({{ t.to_kind }})</span>
+              {% empty %}—{% endfor %}
+            </td>
+            <td>{{ e.created_on|date:'Y-m-d H:i' }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">No emails yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,12 +1,20 @@
 import pandas as pd
 from datetime import datetime, date
-from ..models import Track, Playlist, Appearance
+import uuid
+from ..models import Track, Playlist, Appearance, Artist
 
 def import_preview_apparitions(data, mode):
     imported, updated = 0, 0
+    # Ensure a default artist exists for imported tracks
+    default_artist, _ = Artist.objects.get_or_create(pk=1, defaults={"name": "Unknown"})
     for row in data:
-        track, _ = Track.objects.get_or_create(name=row["Titre"] or "Inconnu",
-                                               defaults={"spotify_id": f"temp_{row['Titre'][:64]}"})
+        title = (row.get("Titre") or "Unknown").strip()
+        # Use name+artist as identity to avoid FK default pitfalls
+        track, _ = Track.objects.get_or_create(
+            name=title,
+            artist=default_artist,
+            defaults={"spotify_id": f"temp_{uuid.uuid4().hex[:20]}"}
+        )
         playlist, _ = Playlist.objects.get_or_create(
             name=row["Playlist"] or "Sans nom",
             defaults={

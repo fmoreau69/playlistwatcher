@@ -2,6 +2,8 @@ celery
 tqdm
 beautifulsoup4
 Django>=5.0
+django-extensions>=3.2
+django-sslserver>=0.22
 python-dotenv>=1.0
 spotipy>=2.23
 pandas>=2.2
