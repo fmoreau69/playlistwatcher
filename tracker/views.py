@@ -401,6 +401,35 @@ def export_pdf(request):
     return export_apparitions_pdf()
 
 
+def export_playlists_csv(request):
+    """Export all playlists to CSV with standard columns."""
+    import pandas as pd  # local import to avoid module load if unused
+    from io import StringIO
+
+    qs = Playlist.objects.all().values(
+        "name", "url", "owner_name", "followers", "description"
+    )
+    df = pd.DataFrame(list(qs))
+    # Rename columns to match preview/import conventions
+    rename_map = {
+        "name": "Nom",
+        "url": "URL",
+        "owner_name": "Curateur",
+        "followers": "Abonnés",
+        "description": "Description",
+    }
+    if not df.empty:
+        df = df.rename(columns=rename_map)
+    else:
+        df = pd.DataFrame(columns=list(rename_map.values()))
+
+    buffer = StringIO()
+    df.to_csv(buffer, index=False)
+    response = HttpResponse(buffer.getvalue(), content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="playlists.csv"'
+    return response
+
+
 # ----- Login and credentials management -----
 @login_required
 def spotify_login(request):

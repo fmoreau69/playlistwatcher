@@ -31,6 +31,7 @@ urlpatterns = [
     path("import_export/", views.import_export, name="import_export"),
     path("export/excel/", views.export_excel, name="export_excel"),
     path("export/pdf/", views.export_pdf, name="export_pdf"),
+    path("export/playlists.csv", views.export_playlists_csv, name="export_playlists_csv"),
     path("confirm-import/", views.confirm_import, name="confirm_import"),
 
     # ----- Login & credentials management -----
