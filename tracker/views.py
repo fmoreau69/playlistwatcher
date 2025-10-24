@@ -389,19 +389,7 @@ def confirm_import(request):
     return redirect("dashboard")
 
 
-def export_excel(request):
-    wb = export_apparitions_excel()
-    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    response["Content-Disposition"] = 'attachment; filename="export.xlsx"'
-    wb.save(response)
-    return response
-
-
-def export_pdf(request):
-    return export_apparitions_pdf()
-
-
-def export_playlists_csv(request):
+def export_csv(request):
     """Export all playlists to CSV with standard columns."""
     import pandas as pd  # local import to avoid module load if unused
     from io import StringIO
@@ -428,6 +416,18 @@ def export_playlists_csv(request):
     response = HttpResponse(buffer.getvalue(), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="playlists.csv"'
     return response
+
+
+def export_excel(request):
+    wb = export_apparitions_excel()
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="export.xlsx"'
+    wb.save(response)
+    return response
+
+
+def export_pdf(request):
+    return export_apparitions_pdf()
 
 
 # ----- Login and credentials management -----
