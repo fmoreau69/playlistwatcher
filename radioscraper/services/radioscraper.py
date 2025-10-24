@@ -31,7 +31,12 @@ def extract_emails(url):
         print(f"Erreur email pour {url}: {e}")
     return ", ".join(emails)
 
-def update_database(radios):
+def update_database(radios, force=False):
+    """
+    Met à jour la base avec les radios fournies.
+    - Si un email existe déjà → on ne fait rien (sauf si force=True).
+    - Si une nouvelle radio est créée → on tente de scraper un email.
+    """
     new_count = 0
     for r in radios:
         radio, created = Radio.objects.get_or_create(
@@ -45,11 +50,20 @@ def update_database(radios):
                 "stream_url": r.get("url", ""),
                 "favicon": r.get("favicon", ""),
                 "language": r.get("language", ""),
-                "emails": "",
+                "emails": "",  # par défaut vide
             }
         )
+
+        # 📌 Cas 1 : nouvelle radio → on tente de scraper si homepage existe
         if created and r.get("homepage"):
             radio.emails = extract_emails(r["homepage"])
             radio.save()
             new_count += 1
+
+        # 📌 Cas 2 : radio existante → on ne scrape pas si email déjà présent (sauf force=True)
+        elif not created:
+            if (force or not radio.emails) and r.get("homepage"):
+                radio.emails = extract_emails(r["homepage"])
+                radio.save()
+
     return new_count
