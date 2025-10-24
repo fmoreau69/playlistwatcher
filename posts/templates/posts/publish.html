@@ -1,4 +1,5 @@
 {% extends 'tracker/base.html' %}
+{% load posts_extras %}
 {% load static %}
 {% block content %}
 <div class="container">
@@ -67,7 +68,7 @@
       </thead>
       <tbody>
         {% for p in posts %}
-          <tr style="background-color: {{ row_color_for_post(p) }};">
+          <tr style="background-color: {{ p|row_color }};">
             <td>{{ p.title }}</td>
             <td>{{ p.get_status_display }}</td>
             <td>{% if p.scheduled_at %}{{ p.scheduled_at|date:'Y-m-d H:i' }}{% else %}-{% endif %}</td>
