@@ -3,6 +3,29 @@ from .models import Radio
 
 @admin.register(Radio)
 class RadioAdmin(admin.ModelAdmin):
-    list_display = ("name", "country", "state", "tags", "homepage", "emails")
-    search_fields = ("name", "country", "state", "tags", "emails")
-    list_filter = ("country", "state", "tags")
+    list_display = (
+        "name",
+        "station_type",
+        "country",
+        "state",
+        "tags",
+        "homepage",
+        "contact_name",
+        "contact_email",
+        "contact_phone",
+        "last_contact_date",
+    )
+    search_fields = (
+        "name",
+        "stationuuid",
+        "country",
+        "state",
+        "tags",
+        "emails",
+        "contact_name",
+        "contact_email",
+        "contact_phone",
+        "show_name",
+        "account_owner",
+    )
+    list_filter = ("station_type", "country", "state")
