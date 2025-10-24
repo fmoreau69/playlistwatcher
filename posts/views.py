@@ -64,11 +64,18 @@ def publish_post(request: HttpRequest) -> HttpResponse:
     # Queue/history
     posts = Post.objects.order_by("-created_on").prefetch_related("targets", "media")
 
+    # Determine selected networks for rendering checked state
+    if request.method == "POST":
+        selected_networks = request.POST.getlist("networks")
+    else:
+        selected_networks = list(SocialNetworks.INITIALLY_SUPPORTED)
+
     context = {
         "form": form,
         "posts": posts,
         "row_color_for_post": _row_color_for_post,
         "supported_networks": SocialNetworks.INITIALLY_SUPPORTED,
+        "selected_networks": selected_networks,
     }
     return render(request, "posts/publish.html", context)
 

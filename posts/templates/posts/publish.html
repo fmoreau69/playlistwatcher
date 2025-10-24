@@ -11,15 +11,14 @@
       <label class="form-label">Réseaux sociaux</label>
       <div class="row">
         {% for value, label in form.fields.networks.choices %}
-          {% with checked=value in form.initial.networks %}
           <div class="col-6 col-sm-4 col-md-3 mb-1">
             <label class="form-check-label">
-              <input class="form-check-input" type="checkbox" name="networks" value="{{ value }}" {% if checked %}checked{% endif %}
-                     {% if value not in supported_networks %}disabled{% endif %}>
+              <input class="form-check-input" type="checkbox" name="networks" value="{{ value }}"
+                {% if value in selected_networks %}checked{% endif %}
+                {% if value not in supported_networks %}disabled{% endif %}>
               {{ label }}{% if value not in supported_networks %} <small class="text-muted">(bientôt)</small>{% endif %}
             </label>
           </div>
-          {% endwith %}
         {% endfor %}
       </div>
     </div>
